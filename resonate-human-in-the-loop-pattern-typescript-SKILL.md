@@ -406,13 +406,21 @@ const promise = yield* ctx.promise();  // Resonate generates deterministic ID
 
 ## Timeout Handling
 
-Always set timeouts for HITL promises to prevent indefinite suspension:
+Always set timeouts for HITL promises to prevent indefinite suspension.
+
+**IMPORTANT:** Timeout values differ between SDK and HTTP API:
+
+| Context | Timeout Format | Example |
+|---------|----------------|---------|
+| SDK (`ctx.promise()`) | Duration in milliseconds | `48 * 60 * 60 * 1000` (48 hours) |
+| HTTP API (`POST /promises`) | Absolute epoch milliseconds | `Date.now() + (48 * 60 * 60 * 1000)` |
 
 ```typescript
+// SDK usage - duration from now
 function* approvalWithTimeout(ctx: Context, orderId: string) {
   const promise = yield* ctx.promise({
     id: `approval/${orderId}`,
-    timeout: 48 * 60 * 60 * 1000  // 48 hours
+    timeout: 48 * 60 * 60 * 1000  // 48 hours (duration)
   });
 
   yield* ctx.run(sendApprovalRequest, orderId, promise.id);
@@ -426,6 +434,15 @@ function* approvalWithTimeout(ctx: Context, orderId: string) {
     return { status: "timeout" };
   }
 }
+
+// HTTP API usage - absolute timestamp
+const response = await fetch(`${RESONATE_URL}/promises`, {
+  method: "POST",
+  body: JSON.stringify({
+    id: `approval/${orderId}`,
+    timeout: Date.now() + (48 * 60 * 60 * 1000)  // 48 hours from NOW (absolute)
+  })
+});
 ```
 
 ## Database Integration

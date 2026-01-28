@@ -9,6 +9,33 @@ description: Specialized guidance for building Resonate applications within Lova
 
 This skill provides specialized guidance for building Resonate durable execution applications within [Lovable.dev](https://lovable.dev), an AI-assisted full-stack development environment. Lovable enables rapid prototyping and deployment of React + Node.js applications with built-in hosting.
 
+## Core Philosophy: Resonate IS the Database
+
+**Critical insight:** For workflow state, Resonate is your single source of truth. You don't need a separate database to track workflow status, pending approvals, or execution state.
+
+```
+Traditional approach (unnecessary complexity):
+  Create workflow → Store in DB → Poll DB for status → Sync with Resonate
+
+Resonate approach (simple):
+  Create workflow → Query Resonate directly → Done
+```
+
+**Why this matters:**
+- Query promises by ID prefix to list pending items
+- Resolve promises to complete workflows
+- No DB sync logic, no stale state, no race conditions
+
+**When you DO need a database:**
+- Business data that outlives workflows (user profiles, orders, products)
+- Analytics and reporting
+- Data that needs relational queries
+
+**When you DON'T need a database:**
+- Workflow status (use Resonate promises)
+- Pending approvals (query by prefix)
+- Execution state (Resonate tracks this)
+
 ## Lovable Environment Constraints
 
 ### What Lovable Provides
@@ -341,6 +368,278 @@ gcloud run deploy resonate-workers \
 
 ```bash
 RESONATE_URL=https://resonate-server-xxx.run.app
+```
+
+## Resonate HTTP API Reference (Direct Calls)
+
+When using Lovable with an external Resonate server, you'll make direct HTTP calls. Here's the complete API reference.
+
+### Server Configuration
+
+```typescript
+const RESONATE_URL = "https://resonate-server.example.com";  // Your Resonate server
+const RESONATE_AUTH_TOKEN = process.env.RESONATE_AUTH_TOKEN; // Optional auth token
+
+const headers = {
+  "Content-Type": "application/json",
+  ...(RESONATE_AUTH_TOKEN && { "Authorization": `Bearer ${RESONATE_AUTH_TOKEN}` })
+};
+```
+
+### Promise States
+
+Resonate promises have these states:
+
+| State | Description |
+|-------|-------------|
+| `PENDING` | Promise created, waiting for resolution |
+| `RESOLVED` | Promise completed successfully |
+| `REJECTED` | Promise failed/rejected |
+| `REJECTED_TIMEDOUT` | Promise exceeded timeout |
+| `REJECTED_CANCELED` | Promise was canceled |
+
+### Create a Promise
+
+**Endpoint:** `POST /promises`
+
+**Request:**
+```json
+{
+  "id": "approval-request-abc123",
+  "timeout": 86400000,
+  "param": {
+    "headers": {},
+    "data": "eyJvcmRlcklkIjoiMTIzIn0="
+  },
+  "tags": {
+    "type": "approval",
+    "created_by": "user@example.com"
+  }
+}
+```
+
+**Notes:**
+- `id`: Use a prefix convention like `approval-request-` for easy querying
+- `timeout`: Epoch milliseconds from now (NOT ISO string). Example: `86400000` = 24 hours
+- `param.data`: Base64-encoded JSON for initial data (optional)
+- `tags`: Key-value metadata for filtering (optional)
+
+**Response:**
+```json
+{
+  "id": "approval-request-abc123",
+  "state": "PENDING",
+  "timeout": 1706486400000,
+  "param": { "headers": {}, "data": "eyJvcmRlcklkIjoiMTIzIn0=" },
+  "value": { "headers": {}, "data": null },
+  "tags": { "type": "approval" },
+  "createdOn": 1706400000000,
+  "completedOn": null
+}
+```
+
+**TypeScript Example:**
+```typescript
+async function createApprovalRequest(requestId: string, data: any) {
+  const response = await fetch(`${RESONATE_URL}/promises`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      id: `approval-request-${requestId}`,
+      timeout: Date.now() + (24 * 60 * 60 * 1000), // 24 hours from now
+      param: {
+        headers: {},
+        data: btoa(JSON.stringify(data)) // Base64 encode
+      }
+    })
+  });
+  return response.json();
+}
+```
+
+### Resolve a Promise
+
+**Endpoint:** `PATCH /promises/{id}`
+
+**Request (approve):**
+```json
+{
+  "state": "RESOLVED",
+  "value": {
+    "data": "eyJhcHByb3ZlZCI6dHJ1ZX0="
+  }
+}
+```
+
+**Request (reject):**
+```json
+{
+  "state": "REJECTED",
+  "value": {
+    "data": "eyJhcHByb3ZlZCI6ZmFsc2UsInJlYXNvbiI6IkJ1ZGdldCBleGNlZWRlZCJ9"
+  }
+}
+```
+
+**Notes:**
+- `value.data`: MUST be Base64-encoded JSON
+- Set `state` to `RESOLVED` for approval, `REJECTED` for rejection
+
+**TypeScript Example:**
+```typescript
+async function resolveApproval(promiseId: string, approved: boolean, reason?: string) {
+  const decision = { approved, reason, resolvedAt: Date.now() };
+  const encodedData = btoa(JSON.stringify(decision)); // Base64 encode
+
+  const response = await fetch(`${RESONATE_URL}/promises/${promiseId}`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({
+      state: approved ? "RESOLVED" : "REJECTED",
+      value: { data: encodedData }
+    })
+  });
+  return response.json();
+}
+```
+
+### Get a Single Promise
+
+**Endpoint:** `GET /promises/{id}`
+
+**Response:**
+```json
+{
+  "id": "approval-request-abc123",
+  "state": "PENDING",
+  "timeout": 1706486400000,
+  "param": { "headers": {}, "data": "eyJvcmRlcklkIjoiMTIzIn0=" },
+  "value": { "headers": {}, "data": null },
+  "tags": { "type": "approval" },
+  "createdOn": 1706400000000,
+  "completedOn": null
+}
+```
+
+**TypeScript Example:**
+```typescript
+async function getApprovalRequest(promiseId: string) {
+  const response = await fetch(`${RESONATE_URL}/promises/${promiseId}`, {
+    method: "GET",
+    headers
+  });
+  const promise = await response.json();
+
+  // Decode the data if present
+  if (promise.param?.data) {
+    promise.decodedParam = JSON.parse(atob(promise.param.data));
+  }
+  if (promise.value?.data) {
+    promise.decodedValue = JSON.parse(atob(promise.value.data));
+  }
+
+  return promise;
+}
+```
+
+### List Promises by Prefix (Query)
+
+**Endpoint:** `GET /promises?id={prefix}*&limit={n}&state={state}`
+
+**Query Parameters:**
+- `id`: Prefix pattern with wildcard, e.g., `approval-request-*`
+- `limit`: Max results (default 10, max usually 100)
+- `state`: Filter by state: `pending`, `resolved`, `rejected`
+
+**Example Queries:**
+```
+GET /promises?id=approval-request-*&limit=50
+GET /promises?id=approval-request-*&state=pending&limit=20
+GET /promises?id=countdown-*&state=pending
+```
+
+**Response:**
+```json
+{
+  "promises": [
+    {
+      "id": "approval-request-abc123",
+      "state": "PENDING",
+      "timeout": 1706486400000,
+      ...
+    },
+    {
+      "id": "approval-request-def456",
+      "state": "RESOLVED",
+      ...
+    }
+  ],
+  "cursor": "next-page-token"
+}
+```
+
+**TypeScript Example:**
+```typescript
+async function listPendingApprovals() {
+  const response = await fetch(
+    `${RESONATE_URL}/promises?id=approval-request-*&state=pending&limit=50`,
+    { method: "GET", headers }
+  );
+  const { promises } = await response.json();
+
+  // Decode all param data
+  return promises.map(p => ({
+    ...p,
+    decodedParam: p.param?.data ? JSON.parse(atob(p.param.data)) : null
+  }));
+}
+```
+
+### Complete Lovable Pattern: No Database Needed
+
+```typescript
+// Create approval - Resonate is the source of truth
+app.post("/api/approvals", async (req, res) => {
+  const requestId = crypto.randomUUID();
+  const promise = await createApprovalRequest(requestId, req.body);
+  res.json({ requestId, promiseId: promise.id });
+});
+
+// List pending approvals - Query Resonate directly
+app.get("/api/approvals", async (req, res) => {
+  const approvals = await listPendingApprovals();
+  res.json(approvals);
+});
+
+// Get single approval
+app.get("/api/approvals/:id", async (req, res) => {
+  const approval = await getApprovalRequest(`approval-request-${req.params.id}`);
+  res.json(approval);
+});
+
+// Resolve approval
+app.post("/api/approvals/:id/resolve", async (req, res) => {
+  const { approved, reason } = req.body;
+  await resolveApproval(`approval-request-${req.params.id}`, approved, reason);
+  res.json({ success: true });
+});
+```
+
+### Timeout Calculation
+
+**IMPORTANT:** Timeouts are absolute epoch milliseconds, not durations.
+
+```typescript
+// ❌ WRONG - This is a duration, not a timestamp
+const timeout = 24 * 60 * 60 * 1000;
+
+// ✅ CORRECT - Absolute timestamp (now + duration)
+const timeout = Date.now() + (24 * 60 * 60 * 1000);
+
+// Common patterns:
+const in1Hour = Date.now() + (60 * 60 * 1000);
+const in24Hours = Date.now() + (24 * 60 * 60 * 1000);
+const in7Days = Date.now() + (7 * 24 * 60 * 60 * 1000);
 ```
 
 ## Lovable AI Prompt Templates

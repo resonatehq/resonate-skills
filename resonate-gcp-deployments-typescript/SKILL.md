@@ -1,5 +1,5 @@
 ---
-name: resonate-google-cloud-typescript
+name: resonate-gcp-deployments-typescript
 description: Deploy Resonate TypeScript workers to Google Cloud Functions (Gen 2) using the GCP shim and connect them to a Resonate Server.
 ---
 

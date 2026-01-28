@@ -1,5 +1,5 @@
 ---
-name: resonate-debug-troubleshoot
+name: resonate-basic-debugging-typescript
 description: Debug and troubleshoot Resonate applications and deployments, especially TypeScript SDK and Resonate Server issues. Use when investigating failures, stuck workflows, error codes, or unexpected replays.
 ---
 

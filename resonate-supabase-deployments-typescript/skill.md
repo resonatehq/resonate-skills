@@ -1,5 +1,5 @@
 ---
-name: resonate-supabase-typescript
+name: resonate-supabase-deployments-typescript
 description: Build Resonate workflows on Supabase Edge Functions (TypeScript/Deno) using the Supabase shim, start/probe endpoints, and optional DB progress tracking.
 ---
 

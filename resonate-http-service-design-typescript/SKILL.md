@@ -1,5 +1,5 @@
 ---
-name: resonate-http-service-design
+name: resonate-http-service-design-typescript
 description: Design HTTP services that use Resonate durable functions behind route handlers, including routing patterns, workflow boundaries, and RPC calls to other service workers (e.g., database service). Use when building or refactoring HTTP APIs that trigger durable workflows in TypeScript.
 ---
 

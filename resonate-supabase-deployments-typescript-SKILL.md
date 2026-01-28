@@ -78,7 +78,12 @@ Intent: register durable functions and expose the Resonate handler.
 import { Resonate, type Context } from "@resonatehq/supabase";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const resonate = new Resonate();
+// Initialize Resonate - reads RESONATE_URL from env by default
+// For token auth, pass token explicitly or set RESONATE_TOKEN env var
+const resonate = new Resonate({
+  url: Deno.env.get("RESONATE_URL")!,
+  token: Deno.env.get("RESONATE_AUTH_TOKEN")  // JWT token if auth required
+});
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -175,6 +180,120 @@ await fetch(`${RESONATE_URL}/promises/${promiseId}`, {
 });
 ```
 
+## Starting Workflows
+
+There are two patterns for starting workflows in Supabase Edge Functions:
+
+### Pattern A: Use the start/probe template (Recommended)
+
+If your template provides `start/` and `probe/` functions, use them:
+
+```ts
+// From your frontend or another service
+const response = await fetch(`${SUPABASE_URL}/functions/v1/start`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+  },
+  body: JSON.stringify({
+    uuid: `countdown-${crypto.randomUUID()}`,
+    func: "durableCountdown",
+    args: [name, durationMinutes, targetTime],
+  }),
+});
+```
+
+The `start/` function internally calls `resonate.run()` for you.
+
+### Pattern B: Custom Deno.serve() with resonate.run()
+
+If you need custom routing or the template doesn't fit your needs:
+
+```ts
+// supabase/functions/flows/index.ts
+import { Resonate, type Context } from "@resonatehq/supabase";
+
+const resonate = new Resonate({
+  url: Deno.env.get("RESONATE_URL")!,
+  token: Deno.env.get("RESONATE_AUTH_TOKEN")
+});
+
+function* durableCountdown(ctx: Context, name: string, durationMinutes: number) {
+  let remaining = durationMinutes;
+
+  while (remaining > 0) {
+    yield* ctx.run(sendWebhook, { type: "tick", name, remaining });
+    yield* ctx.sleep(60 * 1000);
+    remaining--;
+  }
+
+  yield* ctx.run(sendWebhook, { type: "complete", name });
+  return { status: "completed", name };
+}
+
+resonate.register("durableCountdown", durableCountdown);
+
+// Custom request handler
+Deno.serve(async (req) => {
+  const url = new URL(req.url);
+
+  // Start a new workflow
+  if (req.method === "POST" && url.pathname.endsWith("/start")) {
+    const { name, durationMinutes } = await req.json();
+    const promiseId = `countdown-${crypto.randomUUID()}`;
+
+    // This starts AND executes the workflow
+    resonate.run(promiseId, durableCountdown, name, durationMinutes);
+
+    return new Response(JSON.stringify({ promiseId }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  // List active workflows by querying Resonate server directly
+  if (req.method === "GET" && url.pathname.endsWith("/list")) {
+    const resonateUrl = Deno.env.get("RESONATE_URL")!;
+    const token = Deno.env.get("RESONATE_AUTH_TOKEN");
+
+    const response = await fetch(
+      `${resonateUrl}/promises?id=countdown-*&state=pending&limit=50`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { "Authorization": `Bearer ${token}` })
+        }
+      }
+    );
+
+    const data = await response.json();
+    return new Response(JSON.stringify(data), {
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  // Default: let Resonate shim handle workflow execution callbacks
+  return resonate.handler()(req);
+});
+```
+
+### Key Insight: resonate.run() vs HTTP API
+
+**Do NOT create promises via direct HTTP API to start workflows.**
+
+```ts
+// ❌ WRONG - This creates a promise but doesn't execute workflow code
+await fetch(`${RESONATE_URL}/promises`, {
+  method: "POST",
+  body: JSON.stringify({ id: "my-workflow", timeout: 86400000 })
+});
+
+// ✅ CORRECT - This creates the promise AND executes the workflow
+resonate.run("my-workflow", myWorkflowFunction, arg1, arg2);
+```
+
+The HTTP API (`POST /promises`) is for creating standalone promises that will be resolved externally (like human-in-the-loop). To actually RUN workflow code, you must use `resonate.run()`, `resonate.rpc()`, or the `start/` template endpoint.
+
 ## Code patterns
 
 ### Durable sleep
@@ -246,11 +365,34 @@ Expected: a row with status `started` or later.
 
 ## Troubleshooting
 
+### Supabase Issues
 - 401/403 calling `/functions/v1/start` -> missing or wrong `SUPABASE_ANON_KEY`.
 - 404 for `start`/`probe` -> functions not deployed or wrong function name.
+
+### Resonate Server Issues
+- 401 from Resonate server -> `RESONATE_AUTH_TOKEN` not set or invalid JWT.
+- 401 on workflow execution -> token may be expired or server public key mismatch.
 - Workflow never resumes -> promise not resolved; check `promises` endpoint.
+
+### Auth Token Setup
+```ts
+// In your edge function
+const resonate = new Resonate({
+  url: Deno.env.get("RESONATE_URL")!,
+  token: Deno.env.get("RESONATE_AUTH_TOKEN")  // Just "token", not "auth: { ... }"
+});
+
+// For direct HTTP calls to Resonate server
+const headers = {
+  "Content-Type": "application/json",
+  "Authorization": `Bearer ${Deno.env.get("RESONATE_AUTH_TOKEN")}`
+};
+```
+
+### Common Errors
 - Duplicate side effects -> side effect not wrapped in `ctx.run`.
 - Cached result returned -> execution id reused; use a new uuid.
+- "Promise not found" -> workflow ID doesn't match or prefix is wrong.
 
 ## Pitfalls / Anti-patterns
 

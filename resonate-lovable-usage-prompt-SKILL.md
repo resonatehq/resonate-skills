@@ -85,6 +85,7 @@ const router = express.Router();
 // Connect to external Resonate server
 const resonate = new Resonate({
   url: process.env.RESONATE_URL,  // e.g., https://resonate.example.com
+  token: process.env.RESONATE_AUTH_TOKEN,  // JWT token for auth (if server requires it)
   group: "lovable-client"
 });
 
@@ -139,6 +140,7 @@ import { Resonate, type Context } from "@resonatehq/sdk";
 
 const resonate = new Resonate({
   url: process.env.RESONATE_URL,
+  token: process.env.RESONATE_AUTH_TOKEN,  // JWT token for auth
   group: "workers"
 });
 
@@ -159,23 +161,63 @@ process.on("SIGTERM", () => process.exit(0));
 
 ### Architecture B: Supabase Edge Functions (Alternative)
 
-**Use Resonate's Supabase shim within Lovable:**
-
-```typescript
-// supabase/functions/workflow/index.ts
-import { Resonate } from "@resonatehq/supabase";
-
-export default async (req: Request) => {
-  const resonate = new Resonate({
-    url: Deno.env.get("RESONATE_URL")!
-  });
-
-  // Handle workflow invocation
-  // ...
-};
-```
+If using Lovable with Supabase Edge Functions, see the **resonate-supabase-deployments-typescript** skill for complete Deno-specific patterns including:
+- `@resonatehq/supabase` shim usage
+- `start/` and `probe/` endpoint patterns
+- Deno.serve() request handling
 
 **Limitation:** Supabase Edge Functions have 30-second timeout, so workflows must complete quickly or use async patterns.
+
+## HTTP API vs SDK: When to Use Which
+
+This is the most important decision when building with Lovable + Resonate.
+
+### Use the SDK (Programming Model) When:
+
+| Action | SDK Method | Example |
+|--------|------------|---------|
+| Start a workflow | `resonate.run()`, `resonate.rpc()`, `beginRun()`, `beginRpc()` | Starting an order processing workflow |
+| Execute durable code | Generator functions with `ctx.run()`, `ctx.sleep()` | The workflow logic itself |
+| Register workflow handlers | `resonate.register()` | Setting up workers |
+
+**Key insight:** The SDK is for **executing workflows**. You need a process that can run the workflow code.
+
+### Use the HTTP API Directly When:
+
+| Action | HTTP Method | Example |
+|--------|-------------|---------|
+| List promises by prefix | `GET /promises?id=prefix-*` | Showing all pending approvals in UI |
+| Get promise state | `GET /promises/{id}` | Checking if a workflow completed |
+| Resolve a HITL promise | `PATCH /promises/{id}` | User clicking "Approve" button |
+| Create a standalone promise | `POST /promises` | External system creating a promise to be resolved later |
+
+**Key insight:** The HTTP API is for **managing promise state** without running workflow code.
+
+### Decision Flowchart
+
+```
+Do you need to RUN workflow code (generators, ctx.run, ctx.sleep)?
+  │
+  ├─ YES → Use SDK: resonate.run(), resonate.rpc(), etc.
+  │         (Requires a worker process that can execute the code)
+  │
+  └─ NO → Are you querying or resolving existing promises?
+           │
+           ├─ YES → Use HTTP API: GET/PATCH /promises
+           │         (Can be done from any HTTP client)
+           │
+           └─ NO → You probably need the SDK
+```
+
+### Lovable-Specific Guidance
+
+Since Lovable **cannot run persistent workers**, your Lovable backend should:
+
+1. **Use SDK** to START workflows on external workers: `resonate.beginRpc()` with `target: "poll://any@workers"`
+2. **Use HTTP API** to QUERY workflow state: `GET /promises?id=...`
+3. **Use HTTP API or SDK** to RESOLVE promises: `PATCH /promises/{id}` or `resonate.promises.resolve()`
+
+The actual workflow EXECUTION happens on your external workers (Cloud Run, Fly.io, etc.), not in Lovable.
 
 ## Lovable-Specific Patterns
 
@@ -687,6 +729,7 @@ import { Resonate, type Context } from "@resonatehq/sdk";
 
 const resonate = new Resonate({
   url: process.env.RESONATE_URL,
+  token: process.env.RESONATE_AUTH_TOKEN,  // JWT token for auth
   group: "workers"
 });
 

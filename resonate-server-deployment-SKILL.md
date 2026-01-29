@@ -169,16 +169,29 @@ sudo mv jwt /usr/local/bin/
 
 ### 3. Generate Client Tokens
 
-```bash
-# Basic token (no prefix restriction)
-jwt encode --secret @private_key.pem -A RS256 '{}'
+**IMPORTANT:** An empty payload `{}` will DENY all access. You must include a `prefix` claim.
 
-# Token with prefix (restricts access to promises with this prefix)
+```bash
+# Unrestricted access (empty prefix = all promises)
+jwt encode --secret @private_key.pem -A RS256 '{"prefix":""}'
+
+# Admin access (alternative way to get full access)
+jwt encode --secret @private_key.pem -A RS256 '{"role":"admin"}'
+
+# Restricted to prefix (only access promises starting with "my-app")
 jwt encode --secret @private_key.pem -A RS256 '{"prefix":"my-app"}'
 
-# Token with expiration
-jwt encode --secret @private_key.pem -A RS256 --exp='+30 days' '{}'
+# Unrestricted with expiration
+jwt encode --secret @private_key.pem -A RS256 --exp='+30 days' '{"prefix":""}'
 ```
+
+**Prefix claim behavior:**
+| Payload | Access |
+|---------|--------|
+| `{}` | DENIED (no prefix claim = unauthorized) |
+| `{"prefix": ""}` | ALL promises (empty string = unrestricted) |
+| `{"prefix": "my-app"}` | Only promises starting with `my-app` |
+| `{"role": "admin"}` | ALL promises (admin role) |
 
 ### 4. Configure Server
 

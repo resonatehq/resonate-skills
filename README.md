@@ -6,8 +6,8 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 
 ## What's in this repo today
 
-- **5 foundational** (language-agnostic) skills — concepts, mental models, and operational patterns that apply across every Resonate SDK.
-- **13 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
+- **3 foundational** (language-agnostic) skills — concepts, mental models, and the server-install guide that apply across every Resonate SDK.
+- **15 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
 - **Python and Rust** per-SDK coverage is being added in a staged expansion; the Rust SDK is early-development (v0.1.0, not yet on crates.io) and its skill coverage will track SDK stability.
 
 ## What is a skill?
@@ -38,10 +38,8 @@ Every skill falls into one of two categories.
 - [`resonate-philosophy`](resonate-philosophy/SKILL.md) — The foundational mindset. Read this first.
 - [`durable-execution`](durable-execution/SKILL.md) — The core concept and Resonate's approach.
 
-**Reasoning & operations:**
-- [`resonate-advanced-reasoning`](resonate-advanced-reasoning/SKILL.md) — Mapping the Distributed Async Await spec to SDK patterns.
+**Operations:**
 - [`resonate-server-deployment`](resonate-server-deployment/SKILL.md) — Install and configure the Resonate server on Linux with systemd.
-- [`resonate-lovable-usage-prompt`](resonate-lovable-usage-prompt/SKILL.md) — Building Resonate apps in Lovable.dev.
 
 ### Per-SDK: TypeScript
 
@@ -49,6 +47,9 @@ Every skill falls into one of two categories.
 - [`resonate-basic-ephemeral-world-usage-typescript`](resonate-basic-ephemeral-world-usage-typescript/SKILL.md) — Client APIs: initialization, registration, top-level invocations.
 - [`resonate-basic-durable-world-usage-typescript`](resonate-basic-durable-world-usage-typescript/SKILL.md) — Context APIs inside `function*` bodies.
 - [`resonate-basic-debugging-typescript`](resonate-basic-debugging-typescript/SKILL.md) — Investigating stuck workflows, error codes, unexpected replays.
+
+**Reasoning:**
+- [`resonate-advanced-reasoning-typescript`](resonate-advanced-reasoning-typescript/SKILL.md) — Mapping the Distributed Async Await spec to TypeScript SDK patterns and verifying correctness/durability/failure semantics.
 
 **Patterns:**
 - [`resonate-saga-pattern-typescript`](resonate-saga-pattern-typescript/SKILL.md) — Distributed transactions with compensation logic.
@@ -64,6 +65,7 @@ Every skill falls into one of two categories.
 **Deployments:**
 - [`resonate-gcp-deployments-typescript`](resonate-gcp-deployments-typescript/SKILL.md) — Deploy TypeScript workers to Google Cloud Functions.
 - [`resonate-supabase-deployments-typescript`](resonate-supabase-deployments-typescript/SKILL.md) — Resonate workflows on Supabase Edge Functions.
+- [`resonate-lovable-usage-prompt-typescript`](resonate-lovable-usage-prompt-typescript/SKILL.md) — Building Resonate apps in Lovable.dev (Node.js/React/TypeScript).
 
 ### Per-SDK: Python
 
@@ -105,7 +107,7 @@ Decision tree:
 2. **Is it idiomatic usage of a specific SDK's API?** → **Per-SDK.** Suffix the directory name and frontmatter `name` with the SDK: `-typescript`, `-python`, or `-rust`.
 3. **Is it operational or deployment knowledge?** → **Per-SDK** if the SDK shapes the deployment (e.g. Cloud Functions runtime, worker registration). **Foundational** if the operation is truly language-independent (e.g. installing the Resonate server binary).
 
-**Default to per-SDK.** Promote a skill to foundational only when it contains no SDK-specific APIs, syntax, or runtime idioms. Debug skills, for example, are per-SDK: error codes, replay tells, and diagnostic tooling differ enough across SDKs that a single unified debug skill would either read as abstract or balloon past an agent's working context. The concept of replay and durability lives in `durable-execution` and `resonate-advanced-reasoning`; the SDK-specific tells live in each SDK's debug skill.
+**Default to per-SDK.** Promote a skill to foundational only when it contains no SDK-specific APIs, syntax, or runtime idioms. Debug skills, for example, are per-SDK: error codes, replay tells, and diagnostic tooling differ enough across SDKs that a single unified debug skill would either read as abstract or balloon past an agent's working context. The concept of replay and durability lives in `durable-execution`; the SDK-specific tells live in each SDK's debug and advanced-reasoning skills.
 
 ### Same concept, multiple SDKs
 

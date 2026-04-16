@@ -212,7 +212,7 @@ sudo RESONATE_AUTH_ENABLED=true \
 // SDK client
 const resonate = new Resonate({
   url: "https://resonate.example.com",
-  token: process.env.RESONATE_AUTH_TOKEN  // JWT token
+  token: process.env.RESONATE_TOKEN  // JWT token
 });
 
 // Direct HTTP calls
@@ -322,7 +322,7 @@ curl http://localhost:8001/promises
    // Add token to client
    const resonate = new Resonate({
      url: "https://resonate.example.com",
-     token: process.env.RESONATE_AUTH_TOKEN
+     token: process.env.RESONATE_TOKEN
    });
    ```
 

@@ -8,7 +8,7 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 
 - **3 foundational** (language-agnostic) skills — concepts, mental models, and the server-install guide that apply across every Resonate SDK.
 - **15 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
-- **3 Python** per-SDK skills — basic usage + debugging for the Python SDK; more to come in subsequent iterations.
+- **7 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) for the Python SDK; HTTP + deployment skills coming.
 - **Rust** per-SDK coverage is being added in a staged expansion; the Rust SDK is early-development (v0.1.0, not yet on crates.io) and its skill coverage will track SDK stability.
 
 ## What is a skill?
@@ -75,7 +75,13 @@ Every skill falls into one of two categories.
 - [`resonate-basic-durable-world-usage-python`](resonate-basic-durable-world-usage-python/SKILL.md) — Context APIs inside generator-based durable functions (plain `yield`, not `yield*`), determinism rules, and Python-specific deltas from TypeScript.
 - [`resonate-basic-debugging-python`](resonate-basic-debugging-python/SKILL.md) — Python-specific failure modes: generator pitfalls, v0.6.7 legacy-server caveat, Python ≥ 3.12 pin, non-determinism regressions.
 
-Patterns (saga, fan-out, human-in-the-loop, etc.), HTTP/auth, and deployment skills for Python are planned for subsequent iterations once the basic-usage coverage is in use.
+**Patterns:**
+- [`resonate-saga-pattern-python`](resonate-saga-pattern-python/SKILL.md) — Distributed transactions with compensation via `try/except` and reverse-order cleanup.
+- [`resonate-recursive-fan-out-pattern-python`](resonate-recursive-fan-out-pattern-python/SKILL.md) — Parallel execution via list-comprehension over `ctx.begin_run` / `ctx.begin_rpc`, recursion, bounded parallelism.
+- [`resonate-human-in-the-loop-pattern-python`](resonate-human-in-the-loop-pattern-python/SKILL.md) — Workflow steps that block on `ctx.promise(id=...)` until a webhook, UI, or operator resolves.
+- [`resonate-external-system-of-record-pattern-python`](resonate-external-system-of-record-pattern-python/SKILL.md) — Coordinate writes to an external SoR (Postgres, TigerBeetle, Stripe) with idempotency keys.
+
+HTTP/auth, GCP + Supabase deployment skills for Python are planned for subsequent iterations. Durable-sleep-scheduled-work is not currently a separate Python skill because `ctx.sleep` is already covered in the basic-durable-world skill and the Python SDK does not yet expose a top-level `schedule(...)` cron API.
 
 ### Per-SDK: Rust
 

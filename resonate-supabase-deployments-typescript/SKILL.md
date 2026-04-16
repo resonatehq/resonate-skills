@@ -56,12 +56,12 @@ HTTP Request → Edge Function wakes up → Polls Resonate Server → Executes w
 ```ts
 // Option 1: Let shim read from env vars (RECOMMENDED)
 const resonate = new Resonate();
-// Reads RESONATE_URL and RESONATE_AUTH_TOKEN automatically
+// Reads RESONATE_URL and RESONATE_TOKEN automatically
 
 // Option 2: Explicit configuration
 const resonate = new Resonate({
   url: Deno.env.get("RESONATE_URL")!,
-  token: Deno.env.get("RESONATE_AUTH_TOKEN")
+  token: Deno.env.get("RESONATE_TOKEN")
 });
 ```
 
@@ -146,7 +146,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // For token auth, pass token explicitly or set RESONATE_TOKEN env var
 const resonate = new Resonate({
   url: Deno.env.get("RESONATE_URL")!,
-  token: Deno.env.get("RESONATE_AUTH_TOKEN")  // JWT token if auth required
+  token: Deno.env.get("RESONATE_TOKEN")  // JWT token if auth required
 });
 
 const supabase = createClient(
@@ -280,7 +280,7 @@ import { Resonate, type Context } from "@resonatehq/supabase";
 
 const resonate = new Resonate({
   url: Deno.env.get("RESONATE_URL")!,
-  token: Deno.env.get("RESONATE_AUTH_TOKEN")
+  token: Deno.env.get("RESONATE_TOKEN")
 });
 
 function* durableCountdown(ctx: Context, name: string, durationMinutes: number) {
@@ -318,7 +318,7 @@ Deno.serve(async (req) => {
   // List active workflows by querying Resonate server directly
   if (req.method === "GET" && url.pathname.endsWith("/list")) {
     const resonateUrl = Deno.env.get("RESONATE_URL")!;
-    const token = Deno.env.get("RESONATE_AUTH_TOKEN");
+    const token = Deno.env.get("RESONATE_TOKEN");
 
     const response = await fetch(
       `${resonateUrl}/promises?id=countdown-*&state=pending&limit=50`,
@@ -434,7 +434,7 @@ Expected: a row with status `started` or later.
 - 404 for `start`/`probe` -> functions not deployed or wrong function name.
 
 ### Resonate Server Issues
-- 401 from Resonate server -> `RESONATE_AUTH_TOKEN` not set or invalid JWT.
+- 401 from Resonate server -> `RESONATE_TOKEN` not set or invalid JWT.
 - 401 on workflow execution -> token may be expired or server public key mismatch.
 - Workflow never resumes -> promise not resolved; check `promises` endpoint.
 
@@ -443,13 +443,13 @@ Expected: a row with status `started` or later.
 // In your edge function
 const resonate = new Resonate({
   url: Deno.env.get("RESONATE_URL")!,
-  token: Deno.env.get("RESONATE_AUTH_TOKEN")  // Just "token", not "auth: { ... }"
+  token: Deno.env.get("RESONATE_TOKEN")  // Just "token", not "auth: { ... }"
 });
 
 // For direct HTTP calls to Resonate server
 const headers = {
   "Content-Type": "application/json",
-  "Authorization": `Bearer ${Deno.env.get("RESONATE_AUTH_TOKEN")}`
+  "Authorization": `Bearer ${Deno.env.get("RESONATE_TOKEN")}`
 };
 ```
 

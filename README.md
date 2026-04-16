@@ -8,7 +8,8 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 
 - **3 foundational** (language-agnostic) skills — concepts, mental models, and the server-install guide that apply across every Resonate SDK.
 - **15 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
-- **Python and Rust** per-SDK coverage is being added in a staged expansion; the Rust SDK is early-development (v0.1.0, not yet on crates.io) and its skill coverage will track SDK stability.
+- **3 Python** per-SDK skills — basic usage + debugging for the Python SDK; more to come in subsequent iterations.
+- **Rust** per-SDK coverage is being added in a staged expansion; the Rust SDK is early-development (v0.1.0, not yet on crates.io) and its skill coverage will track SDK stability.
 
 ## What is a skill?
 
@@ -69,7 +70,12 @@ Every skill falls into one of two categories.
 
 ### Per-SDK: Python
 
-Coming. The Python SDK (`resonate-sdk` on PyPI) ships to real users; skill coverage is being added to parity with TypeScript.
+**Core SDK usage:**
+- [`resonate-basic-ephemeral-world-usage-python`](resonate-basic-ephemeral-world-usage-python/SKILL.md) — Client APIs: initialization (local vs remote), registration via `@resonate.register` decorator, top-level invocations, external promises.
+- [`resonate-basic-durable-world-usage-python`](resonate-basic-durable-world-usage-python/SKILL.md) — Context APIs inside generator-based durable functions (plain `yield`, not `yield*`), determinism rules, and Python-specific deltas from TypeScript.
+- [`resonate-basic-debugging-python`](resonate-basic-debugging-python/SKILL.md) — Python-specific failure modes: generator pitfalls, v0.6.7 legacy-server caveat, Python ≥ 3.12 pin, non-determinism regressions.
+
+Patterns (saga, fan-out, human-in-the-loop, etc.), HTTP/auth, and deployment skills for Python are planned for subsequent iterations once the basic-usage coverage is in use.
 
 ### Per-SDK: Rust
 

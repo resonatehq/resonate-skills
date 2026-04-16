@@ -9,7 +9,7 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 - **3 foundational** (language-agnostic) skills — concepts, mental models, and the server-install guide that apply across every Resonate SDK.
 - **15 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
 - **8 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) + HTTP service design for the Python SDK.
-- **Rust** per-SDK coverage is being added in a staged expansion; the Rust SDK is early-development (v0.1.0, not yet on crates.io) and its skill coverage will track SDK stability.
+- **3 Rust** per-SDK skills — basic usage + debugging for the early-development Rust SDK (v0.1.0, not yet on crates.io); every Rust skill carries an explicit v0.1.0 caveat.
 
 ## What is a skill?
 
@@ -88,7 +88,14 @@ Every skill falls into one of two categories.
 
 ### Per-SDK: Rust
 
-Coming. The Rust SDK is v0.1.0 and not yet on crates.io — skill coverage tracks SDK stability and will land once the API surface is stable.
+**v0.1.0 caveat:** the Rust SDK is in active development and not yet on crates.io. Install via git dependency. APIs may change between releases; every Rust skill carries this caveat at the top.
+
+**Core SDK usage:**
+- [`resonate-basic-ephemeral-world-usage-rust`](resonate-basic-ephemeral-world-usage-rust/SKILL.md) — Client APIs: `Resonate::new(ResonateConfig)` / `Resonate::local()`, `#[resonate::function]` attribute macro, registration, `.run()` / `.rpc()` / `.schedule()`, promises API.
+- [`resonate-basic-durable-world-usage-rust`](resonate-basic-durable-world-usage-rust/SKILL.md) — Context APIs inside `#[resonate::function]`-decorated async functions: `ctx.run`, `ctx.rpc`, `ctx.sleep`, `.spawn()` for parallelism, function kinds (Workflow / Leaf with Info / Pure leaf).
+- [`resonate-basic-debugging-rust`](resonate-basic-debugging-rust/SKILL.md) — Rust-specific failure modes: serde derive errors, `ctx` vs `info` confusion, `.spawn()` double-await, tokio runtime mismatches, v0.1.0 server-compat.
+
+Patterns, HTTP service design, and deployment skills for Rust track SDK stability. `ctx.promise` (HITL), `ctx.detached`, `ctx.get_dependency`, deterministic time/random, and `ctx.panic`/`assert` are not yet documented in the Rust SDK; pattern skills depending on those land when the SDK does.
 
 ## Using these skills
 

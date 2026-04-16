@@ -9,7 +9,7 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 - **3 foundational** (language-agnostic) skills — concepts, mental models, and the server-install guide that apply across every Resonate SDK.
 - **15 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
 - **8 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) + HTTP service design for the Python SDK.
-- **6 Rust** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work) for the early-development Rust SDK (v0.1.0, not yet on crates.io); every Rust skill carries an explicit v0.1.0 caveat.
+- **8 Rust** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the early-development Rust SDK (v0.1.0, not yet on crates.io); every Rust skill carries an explicit v0.1.0 caveat.
 
 ## What is a skill?
 
@@ -98,9 +98,13 @@ Every skill falls into one of two categories.
 **Patterns:**
 - [`resonate-saga-pattern-rust`](resonate-saga-pattern-rust/SKILL.md) — Distributed transactions with `Result<T>` + match-based compensation dispatch via enum; forward path uses `?` propagation.
 - [`resonate-recursive-fan-out-pattern-rust`](resonate-recursive-fan-out-pattern-rust/SKILL.md) — Parallel execution via `.spawn().await?` double-await pattern; recursion; bounded parallelism via slice `.chunks(n)`.
+- [`resonate-human-in-the-loop-pattern-rust`](resonate-human-in-the-loop-pattern-rust/SKILL.md) — Workflow steps that block on `ctx.promise::<T>()` until a webhook, UI, or operator settles via `resonate.promises.resolve/reject/cancel`.
+- [`resonate-external-system-of-record-pattern-rust`](resonate-external-system-of-record-pattern-rust/SKILL.md) — Coordinate writes to an external SoR (Postgres, TigerBeetle, Stripe) with idempotency keys; type-dispatched DI via `ctx.get_dependency::<T>()`.
 - [`resonate-durable-sleep-scheduled-work-rust`](resonate-durable-sleep-scheduled-work-rust/SKILL.md) — `ctx.sleep(Duration)` for in-workflow durable sleep + `resonate.schedule()` cron-registered ephemeral-world scheduling (Rust has this API; Python's v0.6.7 does not).
 
-**Not yet written for Rust:** human-in-the-loop pattern (`ctx.promise` not documented in v0.1.0), external-system-of-record pattern (`ctx.get_dependency` not documented; dependency-injection idioms unresolved). These skills land when the Rust SDK surfaces the needed APIs. HTTP service design + deployment skills for Rust also track SDK stability.
+**Docs-vs-source note:** `ctx.promise::<T>()`, `ctx.get_dependency::<T>()`, `ctx.info()`, and `resonate.with_dependency::<T>()` all exist in the v0.1.0 SDK source but are not yet covered in `docs/develop/rust.mdx`. The Rust skills above use these APIs with source-path citations; docs are expected to catch up in a future release.
+
+**Not yet written for Rust:** HTTP service design + deployment skills. These track SDK stability and will land when the source/docs validate the relevant paths.
 
 ## Using these skills
 

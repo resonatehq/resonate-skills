@@ -57,12 +57,13 @@ def submit_job(body: JobSubmission):
     job_id = f"order:{body.order_id}"
 
     # start the workflow; return immediately
-    resonate.begin_rpc(
+    # ephemeral-world options chain PRECEDES the call
+    resonate.options(target="poll://any@order-workers").begin_rpc(
         job_id,
         "process_order",
         body.order_id,
         body.items,
-    ).options(target="poll://any@order-workers")
+    )
 
     return {"job_id": job_id, "status": "started"}
 
@@ -103,8 +104,9 @@ def approve_then_ship(ctx, order_id: str):
 # route — start
 @app.post("/orders/{order_id}/approve-and-ship")
 def start(order_id: str):
-    resonate.begin_rpc(f"order:{order_id}", "approve_then_ship", order_id).options(
-        target="poll://any@order-workers"
+    # ephemeral-world options chain PRECEDES the call
+    resonate.options(target="poll://any@order-workers").begin_rpc(
+        f"order:{order_id}", "approve_then_ship", order_id
     )
     return {"status": "pending_approval"}
 
@@ -128,12 +130,16 @@ If the workflow completes quickly (seconds, not minutes), block on it and return
 @app.post("/price-quote")
 def price_quote(body: QuoteRequest):
     quote_id = f"quote:{body.sku}:{body.qty}"
-    result = resonate.rpc(
+    # ephemeral-world options chain PRECEDES the call
+    result = resonate.options(
+        target="poll://any@pricing-workers",
+        timeout=10.0,
+    ).rpc(
         quote_id,
         "compute_quote",
         body.sku,
         body.qty,
-    ).options(target="poll://any@pricing-workers", timeout=10.0)
+    )
     return {"quote_id": quote_id, "price": result["price"]}
 ```
 

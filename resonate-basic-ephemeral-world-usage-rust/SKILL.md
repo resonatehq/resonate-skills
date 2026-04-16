@@ -108,6 +108,44 @@ async fn process_order(ctx: &Context, order_id: String) -> Result<String> {
 }
 ```
 
+## Share resources via dependencies
+
+Dependencies (DB pools, HTTP clients, config) are attached to the `Resonate` instance at construction time with the `.with_dependency<T>(value)` builder. The SDK uses Rust's type system (not a string key) — you retrieve a dependency by its type inside a durable function via `ctx.get_dependency::<T>()`.
+
+```rust
+use std::sync::Arc;
+use sqlx::PgPool;
+
+struct AppConfig {
+    api_key: String,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let pool = PgPool::connect(&std::env::var("DATABASE_URL")?).await?;
+    let config = AppConfig { api_key: std::env::var("API_KEY")? };
+
+    let resonate = Resonate::new(ResonateConfig::default())
+        .with_dependency(pool)
+        .with_dependency(config);
+
+    resonate.register(charge_card).unwrap();
+    // ...
+}
+
+#[resonate::function]
+async fn charge_card(ctx: &Context, order_id: String) -> Result<()> {
+    let pool = ctx.get_dependency::<PgPool>();       // Arc<PgPool>
+    let config = ctx.get_dependency::<AppConfig>();  // Arc<AppConfig>
+    // use pool + config in a leaf (see resonate-basic-durable-world-usage-rust)
+    Ok(())
+}
+```
+
+Type-dispatched DI means you can only have one dependency per type per `Resonate` instance; for multiple values of the same logical type, wrap them in distinct newtypes (`struct PrimaryDb(PgPool)` vs `struct AnalyticsDb(PgPool)`).
+
+> **Note:** `with_dependency` is a pub fn on `Resonate` in the v0.1.0 SDK source (`resonate-sdk-rs:resonate/src/resonate.rs:271`) but not mentioned in `docs/develop/rust.mdx` as of April 2026. Use with the understanding that docs lag source here.
+
 ## Register
 
 Registration exposes a function to the Resonate system. Use `.unwrap()` or handle the `Result` (registration fails if the name is duplicated):
@@ -263,17 +301,31 @@ async fn load_order(order_id: String) -> Result<String> {
 - **`Duration::from_secs(N)` / `from_millis(N)`** for timeouts — not raw numbers. Use `std::time::Duration`.
 - **Turbofish syntax on `.rpc::<T>(...)` and `.get::<T>(...)`** — Rust's type inference needs help when the result type isn't constrained by the call site.
 
-## What is NOT yet in the Rust SDK (or not yet documented)
+## Rust SDK API coverage status
 
-Honest documentation of API deltas vs TS + Python, from reading `docs/develop/rust.mdx` exhaustively:
+Honest reading of v0.1.0 as of April 2026, verified against `resonate-sdk-rs` source (not just docs):
 
-- **No `ctx.promise()` inside durable functions** — the docs do not mention a Context-level promise API for HITL blocking. External-promise creation + resolution is available via `resonate.promises.*` from the ephemeral world only. If you need a HITL pattern in Rust v0.1.0, pre-create the promise in the ephemeral world, pass the ID into the durable function, and have the durable function yield on it some other way (not documented — likely a gap)
-- **No `ctx.detached` / `ctx.begin_run` / `ctx.begin_rpc`** — parallelism is via `.spawn()` on the execution builder (see `resonate-basic-durable-world-usage-rust`)
-- **No `ctx.set_dependency` / `ctx.get_dependency`** — no documented dependency-injection API; dependencies are typically passed as arguments or via closures over `Arc<T>` captured at registration
-- **No `ctx.random.random()` / `ctx.time.time()`** — no documented deterministic time/random helpers
-- **No `ctx.panic()` / `ctx.assert()`** — not documented; use standard Rust `panic!`/`assert!` + `Result` error propagation
+### In the SDK source + documented in `rust.mdx`
+- `Resonate::new/local`, `.register/run/rpc/schedule/get/stop/promises.*`
+- `#[resonate::function]` macro + 3 function kinds (Workflow / Leaf with Info / Pure leaf)
+- `ctx.run/rpc/sleep` + `.spawn()` double-await pattern
+- Context accessors `ctx.id/parent_id/origin_id/func_name/timeout_at`
+- Builder options `.timeout(Duration)`, `.target(&str)` (context), `.version/.tags` (ephemeral)
 
-Treat each of these as "may land in future versions; verify when v0.2.0+ ships."
+### In the SDK source BUT not in `rust.mdx` (use with eyes open)
+- `resonate.with_dependency<T>(value)` — ephemeral-side DI (covered above)
+- `ctx.get_dependency::<T>()` — durable-side DI (see `resonate-basic-durable-world-usage-rust`)
+- `ctx.promise::<T>()` — Context-side HITL primitive (see `resonate-basic-durable-world-usage-rust` + `resonate-human-in-the-loop-pattern-rust`)
+- `ctx.info()` — returns an `Info` struct with extra accessors `branch_id` and `tags`
+
+These are `pub fn` with docstring-level examples in the source; they appear intended for users, just not yet covered by the docs. Until `rust.mdx` catches up, cite the source path (e.g., `resonate/src/context.rs:115`) when reviewers question whether the API exists.
+
+### NOT in the SDK source at v0.1.0
+- `ctx.detached` — fire-and-forget; parallelism is via `.spawn()` instead
+- `ctx.random.random()` / `ctx.time.time()` — no deterministic time/random helpers
+- `ctx.panic()` / `ctx.assert()` — use Rust's own `panic!`/`assert!` + `Result` propagation
+
+Treat the last three as "may land in future versions; verify when v0.2.0+ ships."
 
 ## Related skills
 

@@ -252,17 +252,24 @@ resonate promises resolve <id> --data '{}'    # settle a pending promise
 
 The CLI is SDK-agnostic; same commands work for TS, Python, Rust worker ecosystems.
 
-## What is NOT yet in the Rust SDK
+## Rust SDK API coverage status
 
-(Cross-reference with `resonate-basic-durable-world-usage-rust`'s "What is NOT documented" section — the same gaps.)
+Cross-reference with `resonate-basic-durable-world-usage-rust` for the full treatment; quick summary for debug triage:
 
-- `ctx.promise()` Context-level HITL API
-- `ctx.detached` fire-and-forget
-- `ctx.get_dependency` / `ctx.set_dependency`
-- `ctx.random.random()` / `ctx.time.time()` deterministic helpers
-- `ctx.panic()` / `ctx.assert()`
+### Exists in v0.1.0 source (even if `rust.mdx` doesn't mention it)
+- `ctx.promise::<T>()` — Context-side HITL primitive (source: `resonate/src/context.rs:352`)
+- `ctx.get_dependency::<T>()` + `Info::get_dependency::<T>()` — type-dispatched DI (source: `context.rs:115`, `info.rs:42`)
+- `ctx.info()` returning extra accessors `branch_id`, `tags`
+- `resonate.with_dependency::<T>(value)` — ephemeral-side DI builder
 
-Don't chase these as "missing docs" — they're genuine SDK-surface gaps. Each may land in a future version; check `docs/develop/rust.mdx` when a new release ships.
+If a workflow is mysteriously missing one of these, the issue is likely *docs staleness*, not SDK absence. Cite source paths when an agent reviewer questions whether an API exists.
+
+### NOT in v0.1.0 source
+- `ctx.detached` fire-and-forget — use un-awaited `.spawn()`
+- `ctx.random.random()` / `ctx.time.time()` — do non-det work inside a leaf so it's checkpointed
+- `ctx.panic()` / `ctx.assert()` — use Rust's `panic!` / `assert!` (non-recoverable) or `Result` propagation (recoverable)
+
+Each of these may land in a future version; check `docs/develop/rust.mdx` AND the `resonate-sdk-rs` source when a new release ships — iter-18/19 review showed docs can lag source meaningfully.
 
 ## Related skills
 

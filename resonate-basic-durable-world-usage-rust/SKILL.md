@@ -169,6 +169,77 @@ async fn foo(ctx: &Context) -> Result<()> {
 
 `origin_id` is the top-level invocation that kicked off this call graph; useful for tracing across RPC hops.
 
+`ctx.info()` returns a snapshot `Info` struct with a superset of these accessors, including `branch_id()` and `tags()` (a `&HashMap<String, String>` of tags set at invocation time). Useful when you want to hand execution metadata to a helper function without passing the whole `Context`.
+
+## Dependency access: `ctx.get_dependency::<T>()`
+
+Dependencies set on the `Resonate` instance with `.with_dependency<T>(value)` (see `resonate-basic-ephemeral-world-usage-rust`) are retrieved inside a durable function by type:
+
+```rust
+use std::sync::Arc;
+use sqlx::PgPool;
+
+#[resonate::function]
+async fn write_order(ctx: &Context, order_id: String) -> Result<()> {
+    let pool: Arc<PgPool> = ctx.get_dependency::<PgPool>();
+    // wrap I/O in a leaf so the effect is checkpointed
+    ctx.run(insert_order_row, (pool.clone(), order_id)).await?;
+    Ok(())
+}
+
+async fn insert_order_row((pool, order_id): (Arc<PgPool>, String)) -> Result<()> {
+    sqlx::query("INSERT INTO orders (id) VALUES ($1) ON CONFLICT DO NOTHING")
+        .bind(&order_id)
+        .execute(&*pool)
+        .await?;
+    Ok(())
+}
+```
+
+Type-dispatched: there is one dependency per type per `Resonate` instance. For multiple values of the same logical type (e.g. two Postgres pools pointing at different databases), wrap them in newtypes and register each separately. `ctx.get_dependency::<T>()` panics if no dependency of that type was registered — wire your DI at startup and keep it static, not conditional.
+
+`&Info` also exposes `get_dependency::<T>()`, so a leaf that takes `info: &Info` as its first parameter can access dependencies without needing the full Context.
+
+> **Note:** `ctx.get_dependency` + `Info::get_dependency` are in the v0.1.0 SDK source (`resonate-sdk-rs:resonate/src/context.rs:115`, `info.rs:42`) but not yet covered in `docs/develop/rust.mdx` as of April 2026. Rust-skill review discovered the docs lag; the API is real.
+
+## Human-in-the-loop: `ctx.promise::<T>()`
+
+Context-side promises let a durable function block until an external actor (webhook, UI, CLI, operator) resolves or rejects. The returned `PromiseTask<T>` is a lazy builder: you can attach `.timeout(Duration)` and `.data(&impl Serialize)`, fetch the generated ID via `.id().await?`, eagerly `create()` a handle for later awaiting, or `.await` it directly to block.
+
+```rust
+use serde::{Serialize, Deserialize};
+use std::time::Duration;
+
+#[derive(Serialize, Deserialize)]
+struct Decision {
+    approved: bool,
+    reviewer: String,
+}
+
+#[resonate::function]
+async fn expense_approval(ctx: &Context, expense_id: String) -> Result<String> {
+    // create a promise the reviewer will resolve from outside
+    let decision: Decision = ctx
+        .promise::<Decision>()
+        .timeout(Duration::from_secs(24 * 60 * 60)) // 24-hour SLA
+        .data(&serde_json::json!({ "expense_id": expense_id }))?
+        .await?;                                     // blocks until resolved
+
+    if decision.approved {
+        ctx.run(process_reimbursement, expense_id.clone()).await?;
+        Ok(format!("approved by {}", decision.reviewer))
+    } else {
+        Ok(format!("rejected by {}", decision.reviewer))
+    }
+}
+```
+
+From outside the worker, resolve it with the ephemeral-world `resonate.promises.resolve(...)` API using the same ID. Since the ID is SDK-generated per-invocation, the typical pattern is: fetch `task.id().await?` before awaiting, stash it somewhere the reviewer can read (DB, webhook payload, UI), then `await` the promise.
+
+For the deep HITL pattern (multi-approver, webhooks, SLAs), see `resonate-human-in-the-loop-pattern-rust`.
+
+> **Note:** `ctx.promise::<T>()` is in the v0.1.0 SDK source (`resonate-sdk-rs:resonate/src/context.rs:352`) with a full `PromiseTask<T>` builder (`.timeout`, `.data`, `.id`, `.create`, `.await`) but not yet covered in `docs/develop/rust.mdx` as of April 2026.
+
 ## Leaf with `&Info`
 
 A pure leaf that still needs execution metadata uses `&Info` as its first parameter:
@@ -234,19 +305,30 @@ async fn resilient(ctx: &Context, input: String) -> Result<String> {
 - **`Duration::from_secs` / `from_millis` / `from_millis` / `from_micros`** — never raw numeric literals for time
 - **`Result<T>` + `?` everywhere** — idiomatic Rust propagation; matches the SDK's uniform return shape
 - **`tokio::main` runtime** — async without it requires boilerplate; every Resonate Rust app uses `#[tokio::main]` on its entry point
-- **Dependencies via closures or module-level statics** — no `ctx.get_dependency`; capture `Arc<T>` in a closure registered via `resonate.register`, or pass dependencies as arguments
+- **Dependencies via type-dispatched `ctx.get_dependency::<T>()`** — attach at `Resonate::new(...).with_dependency(value)` time; retrieve in any durable function by type. Newtype if you need multiple values of the same logical type
 
-## What is NOT documented in v0.1.0
+## Rust SDK API coverage status
 
-Honest documentation of gaps vs TS + Python (per iter-14 CHARTER rule: don't invent SDK surface):
+Honest reading of v0.1.0 as of April 2026, verified against `resonate-sdk-rs` source (not just docs):
 
-- **`ctx.promise()`** — not documented for Rust. HITL patterns that work cleanly in TS + Python don't have a documented Rust equivalent at v0.1.0. Use ephemeral-world `resonate.promises.*` from a sibling process and coordinate via `ctx.rpc` until Context-level promises land
-- **`ctx.detached`** — no fire-and-forget documented; use a separate `ctx.rpc` or spawn-and-ignore
-- **`ctx.get_dependency` / `ctx.set_dependency`** — no dependency-injection API documented
-- **`ctx.random.random()` / `ctx.time.time()`** — no deterministic-randomness / deterministic-time helpers documented; standard Rust `std::time::SystemTime::now()` and `rand` will cause replay inconsistency
-- **`ctx.panic()` / `ctx.assert()`** — not documented; use standard Rust `panic!` / `assert!` (which produce a non-recoverable error that the retry policy sees)
+### In the SDK source + documented in `rust.mdx`
+- `ctx.run` / `ctx.rpc` / `ctx.sleep` with builders + `.spawn()` parallelism
+- Context accessors `ctx.id/parent_id/origin_id/func_name/timeout_at`
+- `Info` accessors on leaf-with-info functions
 
-Each of these may land in a later v0.x; write your Rust workflows around the documented set for now.
+### In the SDK source BUT not in `rust.mdx` (safe to use; docs lag)
+- **`ctx.promise::<T>()`** — Context-side HITL primitive with `PromiseTask<T>` builder (`.timeout`, `.data`, `.id`, `.create`, `.await`). Fully featured; discovered in post-session audit against `resonate/src/context.rs:352`
+- **`ctx.get_dependency::<T>()`** — type-dispatched DI. Panics if not registered. `Info::get_dependency` is the same shape on leaves
+- **`ctx.info()`** — returns an `Info` snapshot with extra accessors (`branch_id()`, `tags()`)
+
+Each has been verified as `pub fn` with source-level docstrings; they appear intended for users. Treat them as "supported but not yet in rust.mdx; verify signatures against `resonate-sdk-rs` at the commit you depend on."
+
+### NOT in the SDK source at v0.1.0
+- **`ctx.detached`** — no fire-and-forget; use `ctx.rpc(...).spawn().await?` and simply don't await the returned future, or start a separate RPC without `.await`
+- **`ctx.random.random()` / `ctx.time.time()`** — no deterministic randomness/time helpers. Standard Rust `SystemTime::now()` and `rand` will cause replay inconsistency. Workaround: do non-deterministic work inside a leaf so the value is checkpointed
+- **`ctx.panic()` / `ctx.assert()`** — use standard `panic!` / `assert!` (non-recoverable; retry policy sees them). For recoverable invariant checks, propagate via `Result`
+
+Each of these may land in a later v0.x; write your Rust workflows around the available set for now.
 
 ## Related skills
 

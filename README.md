@@ -8,7 +8,7 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 
 - **3 foundational** (language-agnostic) skills — concepts, mental models, and the server-install guide that apply across every Resonate SDK.
 - **15 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
-- **7 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) for the Python SDK; HTTP + deployment skills coming.
+- **8 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) + HTTP service design for the Python SDK.
 - **Rust** per-SDK coverage is being added in a staged expansion; the Rust SDK is early-development (v0.1.0, not yet on crates.io) and its skill coverage will track SDK stability.
 
 ## What is a skill?
@@ -81,7 +81,10 @@ Every skill falls into one of two categories.
 - [`resonate-human-in-the-loop-pattern-python`](resonate-human-in-the-loop-pattern-python/SKILL.md) — Workflow steps that block on `ctx.promise(id=...)` until a webhook, UI, or operator resolves.
 - [`resonate-external-system-of-record-pattern-python`](resonate-external-system-of-record-pattern-python/SKILL.md) — Coordinate writes to an external SoR (Postgres, TigerBeetle, Stripe) with idempotency keys.
 
-HTTP/auth, GCP + Supabase deployment skills for Python are planned for subsequent iterations. Durable-sleep-scheduled-work is not currently a separate Python skill because `ctx.sleep` is already covered in the basic-durable-world skill and the Python SDK does not yet expose a top-level `schedule(...)` cron API.
+**HTTP & service design:**
+- [`resonate-http-service-design-python`](resonate-http-service-design-python/SKILL.md) — FastAPI/Flask/Django route handlers that start or await durable workflows; worker-group separation; webhook-driven promise resolution.
+
+**Not yet available for Python:** token-based authentication (Python SDK doesn't yet support it — planned for a future release per the docs); GCP Cloud Functions / Supabase Edge deployments (no Python shim; Supabase Edge runtime is Deno-only). Durable-sleep-scheduled-work is not a separate Python skill because `ctx.sleep` is covered in basic-durable-world and the Python SDK lacks a top-level `schedule(...)` cron API.
 
 ### Per-SDK: Rust
 

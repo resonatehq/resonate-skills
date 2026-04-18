@@ -187,7 +187,7 @@ Inside a durable function, `yield ctx.promise(id="approval-ord-123")` blocks unt
 - Subscribing to running invocations (`get`)
 
 **Durable world (Context APIs, used inside a registered function):**
-- Sub-invocations (`ctx.run`, `ctx.rpc`, `ctx.beginRun`, `ctx.beginRpc`, `ctx.detached`)
+- Sub-invocations (`ctx.run`, `ctx.rpc`, `ctx.begin_run`, `ctx.begin_rpc`, `ctx.detached`)
 - Sleeps, promises, deterministic time/random
 - Accessing dependencies (`ctx.get_dependency`)
 

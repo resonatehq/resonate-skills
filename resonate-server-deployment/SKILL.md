@@ -10,6 +10,8 @@ license: Apache-2.0
 
 Deploy the Resonate server on Linux systems using systemd for process management. This skill covers installation, configuration of public URLs, JWT authentication setup, and common troubleshooting scenarios.
 
+Deploying on GCP instead? See [`resonate-server-deployment-cloud-run`](../resonate-server-deployment-cloud-run/SKILL.md) for the Cloud Run + Cloud SQL variant.
+
 ## Prerequisites
 
 - Linux system with systemd
@@ -61,12 +63,14 @@ The Resonate server binary accepts these flags:
 resonate serve [flags]
 
 Flags:
-  --server-url string              Public URL for the server
-  --api-auth-public-key string  Path to JWT public key for authentication
-  --api-http-port int           HTTP API port (default 8001)
-  --aio-store-sqlite-path       SQLite database path
-  --aio-store-postgres-*        PostgreSQL connection options
+  --server-url string           Public URL for the server (included in response headers)
+  --server-port int             HTTP API port (default 8001)
+  --auth-publickey string       Path to JWT public key for authentication
+  --storage-type string         Storage backend: sqlite or postgres (default sqlite)
+  --storage-postgres-url string PostgreSQL connection URL
 ```
+
+All flags are also settable via `RESONATE_`-prefixed environment variables with `__` for nesting, e.g. `RESONATE_SERVER__URL`, `RESONATE_AUTH__PUBLICKEY`, `RESONATE_STORAGE__POSTGRES__URL`.
 
 ## Architecture
 
@@ -132,7 +136,7 @@ User=root
 WorkingDirectory=/var/lib/resonate
 ExecStart=/usr/local/bin/resonate serve \
   --server-url https://resonate.example.com \
-  --api-auth-public-key /etc/resonate/public_key.pem
+  --auth-publickey /etc/resonate/public_key.pem
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -483,10 +487,10 @@ Key deployment steps:
 1. Install binary from GitHub releases
 2. Create systemd service with appropriate flags
 3. Configure `--server-url` for public accessibility
-4. Enable JWT auth with `--api-auth-public-key` if needed
+4. Enable JWT auth with `--auth-publickey` if needed
 5. Set up reverse proxy with SSL
 6. Configure clients with correct URL and token
 
 **Critical flags:**
 - `--server-url`: Server's public URL (required for external access)
-- `--api-auth-public-key`: JWT public key path (required for auth)
+- `--auth-publickey`: JWT public key path (required for auth)

@@ -1,10 +1,10 @@
 ---
-name: resonate-lovable-usage-prompt
-description: Specialized guidance for building Resonate applications within Lovable.dev. Use when working with Lovable's AI-assisted development environment to scaffold, iterate, and deploy Resonate workflows.
+name: resonate-lovable-usage-prompt-typescript
+description: Specialized guidance for building Resonate applications within Lovable.dev, which is Node.js/React/TypeScript. Use when working with Lovable's AI-assisted development environment to scaffold, iterate, and deploy Resonate workflows in the TypeScript SDK.
 license: Apache-2.0
 ---
 
-# Resonate Lovable Usage Prompt
+# Resonate Lovable Usage Prompt — TypeScript
 
 > **SDK version:** This skill reflects `@resonatehq/sdk` v0.10.0 (current on npm).
 
@@ -88,7 +88,7 @@ const router = express.Router();
 // Connect to external Resonate server
 const resonate = new Resonate({
   url: process.env.RESONATE_URL,  // e.g., https://resonate.example.com
-  token: process.env.RESONATE_AUTH_TOKEN,  // JWT token for auth (if server requires it)
+  token: process.env.RESONATE_TOKEN,  // JWT token for auth (if server requires it)
   group: "lovable-client"
 });
 
@@ -143,7 +143,7 @@ import { Resonate, type Context } from "@resonatehq/sdk";
 
 const resonate = new Resonate({
   url: process.env.RESONATE_URL,
-  token: process.env.RESONATE_AUTH_TOKEN,  // JWT token for auth
+  token: process.env.RESONATE_TOKEN,  // JWT token for auth
   group: "workers"
 });
 
@@ -423,11 +423,11 @@ When using Lovable with an external Resonate server, you'll make direct HTTP cal
 
 ```typescript
 const RESONATE_URL = "https://resonate-server.example.com";  // Your Resonate server
-const RESONATE_AUTH_TOKEN = process.env.RESONATE_AUTH_TOKEN; // Optional auth token
+const RESONATE_TOKEN = process.env.RESONATE_TOKEN; // Optional auth token
 
 const headers = {
   "Content-Type": "application/json",
-  ...(RESONATE_AUTH_TOKEN && { "Authorization": `Bearer ${RESONATE_AUTH_TOKEN}` })
+  ...(RESONATE_TOKEN && { "Authorization": `Bearer ${RESONATE_TOKEN}` })
 };
 ```
 
@@ -732,7 +732,7 @@ import { Resonate, type Context } from "@resonatehq/sdk";
 
 const resonate = new Resonate({
   url: process.env.RESONATE_URL,
-  token: process.env.RESONATE_AUTH_TOKEN,  // JWT token for auth
+  token: process.env.RESONATE_TOKEN,  // JWT token for auth
   group: "workers"
 });
 

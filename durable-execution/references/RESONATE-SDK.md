@@ -33,7 +33,7 @@ const resonate = new Resonate({
 | `group` | `RESONATE_GROUP` | `"default"` | Consumer group for SSE routing |
 | `ttl` | `RESONATE_TTL` | `30000` | Task lease TTL in ms |
 | `heartbeatInterval` | `RESONATE_HEARTBEAT_INTERVAL` | `5000` | Heartbeat interval in ms |
-| `auth` | `RESONATE_AUTH_TOKEN` | none | Pre-encoded JWT token |
+| `auth` | `RESONATE_TOKEN` | none | Pre-encoded JWT token |
 
 Constructor options override env vars. Env vars override defaults.
 

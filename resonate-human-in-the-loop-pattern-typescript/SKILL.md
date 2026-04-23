@@ -6,6 +6,8 @@ license: Apache-2.0
 
 # Resonate Human-in-the-Loop Pattern (TypeScript)
 
+> **SDK version:** This skill reflects `@resonatehq/sdk` v0.10.0 (current on npm).
+
 ## Overview
 
 The Human-in-the-Loop (HITL) pattern enables workflows to pause execution and wait for human input—decisions, approvals, reviews, or interventions. The workflow suspends (not blocks resources) and resumes exactly where it left off when the human responds, whether that's seconds, hours, or days later.
@@ -121,8 +123,8 @@ app.post("/approve/:promiseId", async (req, res) => {
   // CRITICAL: Base64 encode data for Resonate server
   const encodedData = Buffer.from(JSON.stringify(decision)).toString('base64');
 
-  await resonate.promises.resolve(promiseId, {
-    data: encodedData
+  await resonate.promises.settle(promiseId, "resolved", {
+    data: encodedData,
   });
 
   res.json({ status: "recorded" });
@@ -227,7 +229,7 @@ app.get("/approve/:promiseId", async (req, res) => {
 
   const encoded = Buffer.from(JSON.stringify(decision)).toString('base64');
 
-  await resonate.promises.resolve(promiseId, { data: encoded });
+  await resonate.promises.settle(promiseId, "resolved", { data: encoded });
 
   res.send(`Decision recorded: ${action}`);
 });
@@ -485,11 +487,11 @@ function* uiApprovalWorkflow(ctx: Context, orderId: string) {
 
 ```typescript
 // ❌ WRONG - Resonate server expects base64
-await resonate.promises.resolve(promiseId, { approved: true });
+await resonate.promises.settle(promiseId, "resolved", { data: { approved: true } as any });
 
 // ✅ CORRECT
 const data = Buffer.from(JSON.stringify({ approved: true })).toString('base64');
-await resonate.promises.resolve(promiseId, { data });
+await resonate.promises.settle(promiseId, "resolved", { data });
 ```
 
 ### 2. Non-Deterministic Promise IDs

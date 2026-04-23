@@ -6,6 +6,8 @@ license: Apache-2.0
 
 # Resonate Basic Durable World Usage
 
+> **SDK version:** This skill reflects `@resonatehq/sdk` v0.10.0 (current on npm).
+
 ## Overview
 
 The **Durable World** is inside generator functions where you write durable, recoverable execution logic using the Context object. Every operation checkpoints progress, enabling automatic recovery after failures.
@@ -391,8 +393,8 @@ app.post("/approve/:promiseId", async (req, res) => {
   const response = { approved: true, approver: req.body.userId };
   const encodedData = Buffer.from(JSON.stringify(response)).toString('base64');
 
-  await resonate.promises.resolve(req.params.promiseId, {
-    data: encodedData
+  await resonate.promises.settle(req.params.promiseId, "resolved", {
+    data: encodedData,
   });
 
   res.json({ status: "approved" });

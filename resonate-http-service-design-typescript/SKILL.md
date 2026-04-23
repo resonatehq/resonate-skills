@@ -6,6 +6,8 @@ license: Apache-2.0
 
 # Resonate HTTP Service Design
 
+> **SDK version:** This skill reflects `@resonatehq/sdk` v0.10.0 (current on npm).
+
 ## Overview
 
 Use this skill to design HTTP services where route handlers start or await durable workflows. The HTTP server is the entrypoint; durable functions do the work and coordinate via Resonate. Downstream services (like a database service) expose their own durable functions and are invoked via RPC.
@@ -87,7 +89,9 @@ app.get("/jobs/:id", async (req, res) => {
 // Webhook: external system resolves promise
 app.post("/webhooks/approval", async (req, res) => {
   const { promiseId, approved } = req.body;
-  await resonate.promises.resolve(promiseId, approved);
+  await resonate.promises.settle(promiseId, "resolved", {
+    data: JSON.stringify({ approved }),
+  });
   res.status(204).end();
 });
 ```

@@ -6,6 +6,8 @@ license: Apache-2.0
 
 # Resonate Basic Ephemeral World Usage
 
+> **SDK version:** This skill reflects `@resonatehq/sdk` v0.10.0 (current on npm).
+
 ## Overview
 
 The **Ephemeral World** is where your application code lives that is NOT inside generator functions. This is where you:
@@ -253,17 +255,21 @@ const promise = await resonate.promises.get("approval-123");
 
 ```ts
 // Elsewhere (webhook, UI, CLI):
-await resonate.promises.resolve("approval-123", {
-  approved: true,
-  approver: "alice@example.com"
+await resonate.promises.settle("approval-123", "resolved", {
+  data: JSON.stringify({
+    approved: true,
+    approver: "alice@example.com",
+  }),
 });
 ```
 
 ### Reject Promise
 
 ```ts
-await resonate.promises.reject("approval-123", {
-  reason: "Insufficient funds"
+await resonate.promises.settle("approval-123", "rejected", {
+  data: JSON.stringify({
+    reason: "Insufficient funds",
+  }),
 });
 ```
 

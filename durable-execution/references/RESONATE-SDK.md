@@ -311,7 +311,7 @@ These are SDK limitations, not protocol limitations. The Resonate server support
 | `ctx.run(asyncFn)` | `ctx.run(function* gen)` | Generators only, no async |
 | `ctx.beginRun()` | `ctx.rpc()` | Fan-out via parallel workers |
 | `ctx.promise({})` auto-ID | `ctx.promise("explicit-id")` | Explicit IDs required |
-| `resonate.promises.resolve()` | Direct `promise.settle` call | Wire protocol |
+| `resonate.promises.resolve()` | `resonate.promises.settle(id, "resolved", { data })` | Single method with `state` discriminator (`resolved` / `rejected` / `rejected_canceled`) in `@resonatehq/sdk` v0.10.0 |
 | `resonate.rpc()` | `resonate.invoke()` or direct `promise.create` | Different dispatch API |
 | `UPPERCASE` states | `lowercase` states | `RESOLVED` → `resolved` |
 | `timeout`, `createdOn` | `timeoutAt`, `createdAt` | Field renames |

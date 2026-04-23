@@ -41,6 +41,7 @@ Every skill falls into one of two categories.
 
 **Operations:**
 - [`resonate-server-deployment`](resonate-server-deployment/SKILL.md) — Install and configure the Resonate server on Linux with systemd.
+- [`resonate-server-deployment-cloud-run`](resonate-server-deployment-cloud-run/SKILL.md) — Deploy the Resonate server to Google Cloud Run with Cloud SQL Postgres storage.
 
 ### Per-SDK: TypeScript
 

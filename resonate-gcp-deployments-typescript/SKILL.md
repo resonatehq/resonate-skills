@@ -38,6 +38,9 @@ Prerequisites in the project environment:
 3. **Set the `RESONATE_URL` env var** for the function so it can reach the Resonate Server. [[Deploy Cloud Function](https://docs.resonatehq.io/learn/deployments/google-cloud-run#deploy-the-cloud-function)]
 4. **Deploy the function** with `gcloud functions deploy` (Gen 2, HTTP trigger).
 5. **Use the function URL as a target** when invoking workflows via the Resonate Server (if needed). [[Trigger countdown](https://docs.resonatehq.io/learn/deployments/google-cloud-run#trigger-a-countdown)]
+6. **(Optional) Deliver output to browsers via the state bus pattern** — when the workflow needs to stream progress to a live UI.
+
+For deploying the Resonate Server itself on GCP (Cloud Run + Cloud SQL), see [`resonate-server-deployment-cloud-run`](../resonate-server-deployment-cloud-run/SKILL.md).
 
 ## Step 1 – Add the GCP worker shim
 
@@ -143,7 +146,68 @@ Where:
 - `--server` is the Resonate Server URL (same as `RESONATE_SERVER_URL`).
 - `--target` is the Cloud Function URL from the previous step.
 
+**Timeout note:** the default promise timeout is short. For long-running or forever-loop workflows, set `--timeout` explicitly (e.g. `--timeout 720h` for a 30-day horizon). A workflow whose timeout lapses will not be resumed.
+
+**Pitfall:** if worker logs show `fetch failed` / `connection_error`, the server is probably returning task URLs pointing at `http://localhost:8001`. Set `--server-url` on the server side — see [`resonate-server-deployment-cloud-run`](../resonate-server-deployment-cloud-run/SKILL.md) or [`resonate-server-deployment`](../resonate-server-deployment/SKILL.md).
+
+## Step 6 – State bus pattern: delivering output to browsers
+
+When the worker is a Cloud Function (short-lived, scales to zero), you can't hold an SSE or WebSocket connection for the lifetime of a workflow. The durable pattern is:
+
+1. The workflow `ctx.run`s a `writeState` step that writes the current state to a database or realtime bus.
+2. The browser subscribes directly to that bus.
+
+This keeps the worker stateless and the client decoupled. Any change becomes durable (because `ctx.run` is durable) and observable (because the bus is live).
+
+Firestore + the Firebase JS SDK `onSnapshot` is the lightest-weight option on GCP: one managed service, free tier covers most demos, no gateway to run. Other bus options include Pub/Sub (via Firestore-triggered functions), Supabase Realtime, or any database with change feeds.
+
+**Worker side** — extend your existing worker with a Firestore client and a `writeState` activity:
+
+```ts
+import { Firestore } from "@google-cloud/firestore";
+
+// Module scope: client is reused across warm invocations; keeping it inside
+// the generator would reconnect on every replay and slow cold paths.
+const firestore = new Firestore();
+const liveDoc = firestore.collection("myapp").doc("live");
+
+async function writeState(_ctx: Context, state: Record<string, unknown>) {
+  await liveDoc.set(state);
+}
+
+function* workflow(ctx: Context) {
+  // … compute some state …
+  yield* ctx.run(writeState, { step: "ready", t: Date.now() });
+}
+```
+
+Grant the Cloud Function's runtime service account `roles/datastore.user` on the project (Firestore Native uses Datastore IAM).
+
+**Browser side** — minimal subscriber:
+
+```ts
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, onSnapshot } from "firebase/firestore";
+
+const app = initializeApp({ projectId: "<your-project>" /* + apiKey, etc. */ });
+const db = getFirestore(app);
+
+onSnapshot(doc(db, "myapp", "live"), (snap) => {
+  const state = snap.data();
+  // render state
+});
+```
+
+Firestore rules should be read-only for anonymous users on the subscriber collection — no client should ever write through to it; only the worker's service account does.
+
+**Contrast with other "browser + Resonate" patterns.** In [`example-countdown-web-ts`](https://github.com/resonatehq-examples/example-countdown-web-ts) and [`example-browser-worker-ts`](https://github.com/resonatehq-examples/example-browser-worker-ts) the worker itself runs in the browser tab. That's a different use case (a durable workflow per tab). The state bus pattern keeps the worker server-side and treats the browser as a read-only subscriber — the right shape when the workflow is shared across all viewers or must run even when no tabs are open.
+
 ## Outputs
 
 - A deployed Cloud Function Gen 2 worker exposing an HTTP `handler` compatible with Resonate.
 - The function can be used as a durable worker target by the Resonate Server, enabling long-running workflows across short-lived Cloud Function invocations.
+- (If Step 6) A live Firestore document the browser can subscribe to, no gateway required.
+
+## Reference example
+
+[`example-chess-hero-gcp-ts`](https://github.com/resonatehq-examples/example-chess-hero-gcp-ts) — end-to-end: worker on Cloud Functions Gen 2, server on Cloud Run ([`resonate-server-deployment-cloud-run`](../resonate-server-deployment-cloud-run/SKILL.md)), output streamed to a browser via the state bus pattern.

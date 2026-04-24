@@ -77,7 +77,7 @@ export MY_TOKEN=$(jwt encode --secret @private_key.pem -A RS256 '{"prefix":"work
 
 ```bash
 # Enable JWT authentication
-resonate dev --api-auth-public-key public_key.pem
+resonate dev --auth-publickey public_key.pem
 ```
 
 **What this does:**
@@ -92,13 +92,16 @@ resonate dev --api-auth-public-key public_key.pem
 # Using Docker
 docker run -v $(pwd)/public_key.pem:/keys/public_key.pem \
   resonatehq/resonate \
-  serve --api-auth-public-key /keys/public_key.pem
+  serve --auth-publickey /keys/public_key.pem
 
-# Using systemd service
+# Using systemd service (see `resonate-server-deployment`)
 resonate serve \
-  --api-auth-public-key /etc/resonate/public_key.pem \
-  --aio-store-postgres-host db.example.com
+  --auth-publickey /etc/resonate/public_key.pem \
+  --storage-type postgres \
+  --storage-postgres-url postgres://user:pass@db.example.com/resonate
 ```
+
+For fully worked deploys of the server with auth wired in, see [`resonate-server-deployment`](../resonate-server-deployment/SKILL.md) (Linux/systemd) or [`resonate-server-deployment-cloud-run`](../resonate-server-deployment-cloud-run/SKILL.md) (GCP Cloud Run + Cloud SQL).
 
 ## Pattern 1: Basic Token Authentication
 
@@ -351,7 +354,7 @@ openssl genrsa -out private_key_v2.pem 2048
 openssl rsa -in private_key_v2.pem -pubout -out public_key_v2.pem
 
 # Update server configuration
-resonate serve --api-auth-public-key public_key_v2.pem
+resonate serve --auth-publickey public_key_v2.pem
 
 # Issue new tokens with new private key
 jwt encode -S @private_key_v2.pem -A RS256 '{"prefix":"tenant-1"}'
@@ -427,14 +430,14 @@ resonate.on("error", (error) => {
 
 ```bash
 # ❌ WRONG - Server not configured for auth
-resonate dev  # No --api-auth-public-key flag
+resonate dev  # No --auth-publickey flag
 
 # Client with token connects but auth is not enforced
 ```
 
 ```bash
 # ✅ CORRECT - Server configured for auth
-resonate dev --api-auth-public-key public_key.pem
+resonate dev --auth-publickey public_key.pem
 ```
 
 ### 2. Mismatched Prefix in Token and SDK

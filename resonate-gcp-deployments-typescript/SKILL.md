@@ -38,6 +38,9 @@ Prerequisites in the project environment:
 3. **Set the `RESONATE_URL` env var** for the function so it can reach the Resonate Server. [[Deploy Cloud Function](https://docs.resonatehq.io/learn/deployments/google-cloud-run#deploy-the-cloud-function)]
 4. **Deploy the function** with `gcloud functions deploy` (Gen 2, HTTP trigger).
 5. **Use the function URL as a target** when invoking workflows via the Resonate Server (if needed). [[Trigger countdown](https://docs.resonatehq.io/learn/deployments/google-cloud-run#trigger-a-countdown)]
+6. **(Optional) Stream workflow output to browsers** — see [`resonate-state-bus-pattern-typescript`](../resonate-state-bus-pattern-typescript/SKILL.md) for the pattern (Firestore `onSnapshot` is the lightest GCP option).
+
+For deploying the Resonate Server itself on GCP (Cloud Run + Cloud SQL), see [`resonate-server-deployment-cloud-run`](../resonate-server-deployment-cloud-run/SKILL.md).
 
 ## Step 1 – Add the GCP worker shim
 
@@ -143,7 +146,21 @@ Where:
 - `--server` is the Resonate Server URL (same as `RESONATE_SERVER_URL`).
 - `--target` is the Cloud Function URL from the previous step.
 
+**Timeout note:** the default promise timeout is short. For long-running or forever-loop workflows, set `--timeout` explicitly (e.g. `--timeout 720h` for a 30-day horizon). A workflow whose timeout lapses will not be resumed.
+
+**Pitfall:** if worker logs show `fetch failed` / `connection_error`, the server is probably returning task URLs pointing at `http://localhost:8001`. Set `--server-url` on the server side — see [`resonate-server-deployment-cloud-run`](../resonate-server-deployment-cloud-run/SKILL.md) or [`resonate-server-deployment`](../resonate-server-deployment/SKILL.md).
+
+## Step 6 – (Optional) Stream output to browsers
+
+Cloud Functions are short-lived — they can't hold an SSE or WebSocket connection for the life of a durable workflow. The durable pattern is to write workflow state to an external realtime bus (e.g. Firestore) and subscribe from the browser.
+
+This is its own pattern, covered end-to-end in [`resonate-state-bus-pattern-typescript`](../resonate-state-bus-pattern-typescript/SKILL.md). Firestore + `onSnapshot` is the lightest GCP option; the same shape works with Supabase Realtime, Pub/Sub, or any DB with change feeds.
+
 ## Outputs
 
 - A deployed Cloud Function Gen 2 worker exposing an HTTP `handler` compatible with Resonate.
 - The function can be used as a durable worker target by the Resonate Server, enabling long-running workflows across short-lived Cloud Function invocations.
+
+## Reference example
+
+[`example-chess-hero-gcp-ts`](https://github.com/resonatehq-examples/example-chess-hero-gcp-ts) — end-to-end: worker on Cloud Functions Gen 2, server on Cloud Run ([`resonate-server-deployment-cloud-run`](../resonate-server-deployment-cloud-run/SKILL.md)), output streamed to a browser via [`resonate-state-bus-pattern-typescript`](../resonate-state-bus-pattern-typescript/SKILL.md).

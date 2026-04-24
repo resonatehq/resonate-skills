@@ -7,7 +7,7 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 ## What's in this repo today
 
 - **3 foundational** (language-agnostic) skills — concepts, mental models, and the server-install guide that apply across every Resonate SDK.
-- **15 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
+- **16 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
 - **8 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) + HTTP service design for the Python SDK.
 - **8 Rust** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the early-development Rust SDK (v0.1.0, not yet on crates.io); every Rust skill carries an explicit v0.1.0 caveat.
 
@@ -41,6 +41,7 @@ Every skill falls into one of two categories.
 
 **Operations:**
 - [`resonate-server-deployment`](resonate-server-deployment/SKILL.md) — Install and configure the Resonate server on Linux with systemd.
+- [`resonate-server-deployment-cloud-run`](resonate-server-deployment-cloud-run/SKILL.md) — Deploy the Resonate server to Google Cloud Run with Cloud SQL Postgres storage.
 
 ### Per-SDK: TypeScript
 
@@ -58,6 +59,7 @@ Every skill falls into one of two categories.
 - [`resonate-human-in-the-loop-pattern-typescript`](resonate-human-in-the-loop-pattern-typescript/SKILL.md) — Approval gates and manual review workflows.
 - [`resonate-external-system-of-record-pattern-typescript`](resonate-external-system-of-record-pattern-typescript/SKILL.md) — Consistency across systems without distributed transactions.
 - [`resonate-durable-sleep-scheduled-work-typescript`](resonate-durable-sleep-scheduled-work-typescript/SKILL.md) — Timers, countdowns, and delayed execution via `ctx.sleep()`.
+- [`resonate-state-bus-pattern-typescript`](resonate-state-bus-pattern-typescript/SKILL.md) — Stream durable workflow state to browsers via an external realtime bus (Firestore, Supabase Realtime, Pub/Sub) when the worker is short-lived.
 
 **HTTP & authentication:**
 - [`resonate-http-service-design-typescript`](resonate-http-service-design-typescript/SKILL.md) — HTTP services with Resonate behind route handlers.

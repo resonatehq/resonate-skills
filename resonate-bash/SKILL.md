@@ -1,6 +1,6 @@
 ---
 name: resonate-bash
-description: Use Resonate's `resonate-bash` MCP tool to run shell scripts as durable, asynchronous tasks. Use when waiting on something that takes minutes-to-hours (CI runs, deploys, DNS/SSL propagation, image-generation jobs, data-export polls), when work must survive a session close or host crash, or when you want a named, queryable promise ID a later session can look up. Covers what `resonate-bash` is good at, how to install the local Resonate server + Claude Code MCP wiring, the tool's parameter surface, target addresses (local / Docker / Tensorlake), the env vars injected into every script, failure semantics, and idempotency rules. Reach for this instead of `Bash(run_in_background)` whenever the work is longer-running than a foreground command or needs to outlive the session.
+description: Run shell scripts as durable, asynchronous tasks via Resonate's `resonate-bash` MCP tool. Reach for this when waiting on something that takes minutes-to-hours (CI runs, deploys, DNS / SSL propagation, image-generation jobs), when work must survive a session close or host crash, or when you want a named, queryable promise ID a later session can look up. Covers what `resonate-bash` is good at, how to install the local Resonate server + Claude Code MCP wiring, the tool's parameter surface, target addresses (local / Docker / Tensorlake), failure semantics, and idempotency rules.
 license: Apache-2.0
 ---
 
@@ -37,7 +37,7 @@ Keep regular `Bash` (foreground or `run_in_background: true`) for fast commands,
 
 **Operations that need to outlive the current session.** Promises live on the Resonate server, not in the calling Claude Code session. If the laptop closes, the host hiccups, or a new conversation starts tomorrow, the work continues. A later session can look up the promise ID and read the result via `promise-get` or `promise-search`.
 
-**Named, queryable state.** Promise IDs are first-class. Prefix them by project and date (`tamrack-ssl-watch-2026-05-21`, `echo-deploy-2026-05-21`), then filter `promise-search` later via the `tags` parameter to audit what fired across days. Cross-conversation lookup isn't automatic — a later session only finds the ID if it was recorded somewhere that session reads (handoff doc, project AGENT.md, the prompt the operator gives you).
+**Named, queryable state.** Promise IDs are durable identifiers. Prefix them by project and date (`ci-watch-2026-05-21`, `dns-propagation-2026-05-21`, `image-gen-2026-05-21`), then filter `promise-search` later via the `tags` parameter to audit what fired across days. Cross-conversation lookup isn't automatic — a later session only finds the ID if it was recorded somewhere that session reads (a handoff note, the prompt the operator provides).
 
 **Fire-and-watch coordination with external systems.** Most CI tools, deploy platforms, image-generation APIs, and data-export jobs expose a status endpoint but no webhook. `resonate-bash` is the right shape for that: submit the work, poll in the shell, get notified on completion.
 
@@ -84,7 +84,7 @@ Loop **until `$RESONATE_PROMISE_TIMEOUT_AT`**, not for a fixed duration. That's 
 ### Promise-ID conventions
 
 - Always pass `id`. Auto-generated IDs are unqueryable and hostile to handoffs.
-- Prefix by project and date: `tamrack-ssl-watch-2026-05-21`, `echo-deploy-2026-05-21`, `pulse-bq-freshness-2026-05-21`.
+- Prefix by project and date: `ci-watch-2026-05-21`, `dns-propagation-2026-05-21`, `image-gen-2026-05-21`.
 - Set `tags: { project: "<name>" }` so `promise-search` can filter cleanly.
 
 ## Installation
@@ -112,6 +112,8 @@ A single binary serves both as the server (`resonate dev` / `resonate serve`) an
 
 Two options. Start with 2a to confirm everything works, then switch to 2b for a persistent install.
 
+Port 8888 is used throughout this guide to avoid colliding with `resonate dev`'s default port 8001 (some users already have a server on that port). Pick whatever you want — just keep it consistent across the server, the plist, and the MCP `--server` URL in step 3.
+
 **2a. Foreground (temporary):**
 
 ```bash
@@ -120,8 +122,10 @@ export TENSORLAKE_API_KEY="tl_apiKey_REPLACE_ME"
 
 resonate dev \
   --server-port 8888 \
-  --transports-bash-exec-enabled
+  --transports-bash-exec-enabled true
 ```
+
+The `--transports-bash-exec-enabled` flag requires an explicit `true` / `false` — a bare flag will error with `a value is required for '--transports-bash-exec-enabled <BOOL>'`.
 
 Verify in another shell:
 
@@ -151,13 +155,6 @@ Write `~/Library/LaunchAgents/io.resonatehq.resonate.dev.plist`:
         <string>true</string>
     </array>
 
-    <!-- Omit this block if you are not using bash://tensorlake/... -->
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>TENSORLAKE_API_KEY</key>
-        <string>tl_apiKey_REPLACE_ME</string>
-    </dict>
-
     <key>RunAtLoad</key>
     <true/>
 
@@ -171,6 +168,16 @@ Write `~/Library/LaunchAgents/io.resonatehq.resonate.dev.plist`:
     <string>/tmp/resonate-dev.log</string>
 </dict>
 </plist>
+```
+
+If you target `bash://tensorlake/...`, add an `EnvironmentVariables` block to the `<dict>` above so the API key is visible to the resonate process (not just your shell):
+
+```xml
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>TENSORLAKE_API_KEY</key>
+        <string>tl_apiKey_REPLACE_ME</string>
+    </dict>
 ```
 
 Load it:
@@ -194,11 +201,12 @@ Logs: `tail -f /tmp/resonate-dev.log`.
 
 ### 3. Wire Claude Code to the Resonate MCP server
 
-Edit `~/.claude.json` and add a `resonate` entry under `mcpServers`. Merge with existing entries — don't overwrite the file:
+Edit `~/.claude.json`. The file has many top-level keys and may already contain other MCP servers under `mcpServers` — **merge in** the `resonate` entry, don't replace the file or the `mcpServers` block:
 
 ```json
 {
   "mcpServers": {
+    // ...existing entries stay here...
     "resonate": {
       "type": "stdio",
       "command": "/opt/homebrew/bin/resonate",
@@ -208,6 +216,8 @@ Edit `~/.claude.json` and add a `resonate` entry under `mcpServers`. Merge with 
   }
 }
 ```
+
+If you used a non-8888 port in step 2, update the `--server` URL here to match.
 
 ### 4. Enable the Claude Code preview channel
 

@@ -6,7 +6,7 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 
 ## What's in this repo today
 
-- **5 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, the cross-SDK defaults reference, and the `resonate-bash` MCP tool guide that apply across every Resonate SDK.
+- **6 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, the cross-SDK defaults reference, and the `resonate-bash` MCP tool guide that apply across every Resonate SDK.
 - **16 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
 - **8 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) + HTTP service design for the Python SDK.
 - **8 Rust** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the early-development Rust SDK (v0.1.0, not yet on crates.io); every Rust skill carries an explicit v0.1.0 caveat.

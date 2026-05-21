@@ -6,7 +6,7 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 
 ## What's in this repo today
 
-- **4 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, and the cross-SDK defaults reference that apply across every Resonate SDK.
+- **6 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, the cross-SDK defaults reference, and the `resonate-bash` MCP tool guide that apply across every Resonate SDK.
 - **16 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
 - **8 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) + HTTP service design for the Python SDK.
 - **8 Rust** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the early-development Rust SDK (v0.1.0, not yet on crates.io); every Rust skill carries an explicit v0.1.0 caveat.
@@ -42,6 +42,7 @@ Every skill falls into one of two categories.
 **Operations:**
 - [`resonate-server-deployment`](resonate-server-deployment/SKILL.md) — Install and configure the Resonate server on Linux with systemd.
 - [`resonate-server-deployment-cloud-run`](resonate-server-deployment-cloud-run/SKILL.md) — Deploy the Resonate server to Google Cloud Run with Cloud SQL Postgres storage.
+- [`resonate-bash`](resonate-bash/SKILL.md) — Run shell scripts as durable, asynchronous tasks via the `resonate-bash` MCP tool. What it's good at, how to install the local Resonate server + Claude Code MCP wiring, tool reference (params, target addresses, env vars, failure semantics).
 
 **Reference:**
 - [`resonate-defaults`](resonate-defaults/SKILL.md) — Cross-SDK default values for retry policies, `ctx.run` options, init, env vars, and server flags. Read this when asked "what's the default for X" instead of deflecting to "check the SDK source."

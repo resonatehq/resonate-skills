@@ -6,7 +6,7 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 
 ## What's in this repo today
 
-- **6 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, the cross-SDK defaults reference, and the `resonate-bash` MCP tool guide that apply across every Resonate SDK.
+- **7 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, the CLI reference, the cross-SDK defaults reference, and the `resonate-bash` MCP tool guide that apply across every Resonate SDK.
 - **16 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
 - **8 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) + HTTP service design for the Python SDK.
 - **8 Rust** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the early-development Rust SDK (v0.1.0, not yet on crates.io); every Rust skill carries an explicit v0.1.0 caveat.
@@ -40,6 +40,7 @@ Every skill falls into one of two categories.
 - [`durable-execution`](durable-execution/SKILL.md) — The core concept and Resonate's approach.
 
 **Operations:**
+- [`resonate-cli`](resonate-cli/SKILL.md) — Drive the Resonate server from the shell: `serve`/`dev`, promise CRUD + search, schedules, `invoke`, `tree`, tasks, and the MCP shim. Covers every subcommand and flag as of `resonate 0.9.7`, plus the small set of docs-vs-binary deltas an agent will trip on.
 - [`resonate-server-deployment`](resonate-server-deployment/SKILL.md) — Install and configure the Resonate server on Linux with systemd.
 - [`resonate-server-deployment-cloud-run`](resonate-server-deployment-cloud-run/SKILL.md) — Deploy the Resonate server to Google Cloud Run with Cloud SQL Postgres storage.
 - [`resonate-bash`](resonate-bash/SKILL.md) — Run shell scripts as durable, asynchronous tasks via the `resonate-bash` MCP tool. What it's good at, how to install the local Resonate server + Claude Code MCP wiring, tool reference (params, target addresses, env vars, failure semantics).

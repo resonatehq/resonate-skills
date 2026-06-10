@@ -2,6 +2,8 @@
 
 Five-step triage for when things go wrong.
 
+> **Language note.** The symptoms and fixes here are written against the **TypeScript** SDK (generator functions, `yield*`). The *categories* of failure (non-determinism, missing checkpoints, wrong function shape) are universal, but the concrete tells differ per SDK — Python uses bare `yield`, Rust uses `async fn` + `.await`, Go uses ordinary funcs + `Future.Await`, and none of those will show generator-specific errors. For language-specific debugging, see `resonate-basic-debugging-{typescript,python,rust,go}`.
+
 ---
 
 ## The 5-Step Debug Protocol
@@ -58,7 +60,7 @@ const result = yield ctx.run(myStep, data);
 
 ### Cause 4: Task Stuck in `acquired` State
 
-A worker acquired the task but crashed before fulfilling it. The task remains `acquired` until the lease expires (default: 30 seconds).
+A worker acquired the task but crashed before fulfilling it. The task remains `acquired` until the lease expires (default: 15 seconds).
 
 **Diagnosis:**
 ```bash
@@ -67,7 +69,7 @@ curl -s -X POST http://localhost:8001 \
   -d '{"kind":"debug.snap","head":{"corrId":"d","version":""},"data":{}}' | jq '.data.taskTimeouts'
 ```
 
-**Fix:** Wait for the lease timeout. The server will transition the task back to `pending` and re-dispatch it. If you need faster recovery, reduce `RESONATE_TASK_LEASE_TIMEOUT`.
+**Fix:** Wait for the lease timeout. The server will transition the task back to `pending` and re-dispatch it. If you need faster recovery, reduce `RESONATE_TASKS__LEASE_TIMEOUT`.
 
 ### Cause 5: `async function` Instead of `function*`
 
@@ -105,8 +107,8 @@ curl -s -X POST http://localhost:8001 \
 
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
-| "Port already in use" | Another process on port 8001 | `lsof -i :8001` then kill it, or change `RESONATE_PORT` |
-| Exits immediately | Database path not writable | `mkdir -p $(dirname $RESONATE_DB_PATH)` |
+| "Port already in use" | Another process on port 8001 | `lsof -i :8001` then kill it, or change `RESONATE_SERVER__PORT` |
+| Exits immediately | Database path not writable | `mkdir -p $(dirname $RESONATE_STORAGE__SQLITE__PATH)` |
 | Auth key error | Invalid PEM file | Regenerate: `openssl genrsa -out priv.pem 2048 && openssl rsa -in priv.pem -pubout -out pub.pem` |
 
 ---
@@ -208,6 +210,6 @@ curl -s -X POST http://localhost:8001 \
 | "Same ID returns old result" | Expected — idempotency. Use a new ID for a new execution |
 | Worker keeps restarting | Check `journalctl -u resonate -f` for crash logs |
 | Tasks re-dispatching repeatedly | Worker not calling `task.fulfill`. Check for unhandled errors |
-| HITL promise never resolves | Verify the `promise.settle` call uses the correct promise ID and encoding |
-| Sleep timer doesn't fire | Check `RESONATE_TICK_INTERVAL` — timers have tick-interval granularity |
+| HITL promise never resolves | Verify the resolve/reject/cancel call uses the correct promise ID and value encoding |
+| Sleep timer doesn't fire | Confirm the server is running and a worker is connected — durable sleeps fire on the server's background processing loop |
 | Database locked errors | Only one server process per database file. Kill duplicates |

@@ -10,9 +10,11 @@ license: Apache-2.0
 
 If you've been trained on distributed systems, microservices, event-driven architectures, or coordination patterns, you need to **UNLEARN that complexity** when using Resonate.
 
+> **Language note.** This skill is about *mindset*, not syntax. Code examples are shown in **TypeScript**; the ideas are identical across all four Resonate SDKs — only the syntax differs (Python uses bare `yield`, Rust uses `async fn` + `.await`, Go uses ordinary funcs + `Future.Await`). For concrete syntax in your language, pair this skill with `resonate-basic-durable-world-usage-{typescript,python,rust,go}`.
+
 **Resonate handles the hard parts automatically:**
 - Retries and backoff (just throw errors, Resonate retries)
-- State persistence (every `yield*` is a checkpoint)
+- State persistence (every durable step is a checkpoint)
 - Crash recovery (resumes from last checkpoint)
 - Coordination (structured concurrency built-in)
 - Timeouts (configurable per operation)
@@ -28,8 +30,8 @@ When you see these patterns in your instincts, STOP and reconsider:
 |---------------|----------------|---------------------|
 | State machine for workflow status | Resonate IS the state machine | Query promise state directly |
 | Database table for "pending_workflows" | Resonate IS the database for workflow state | `GET /promises?id=prefix-*` |
-| Retry wrapper with exponential backoff | Built into Resonate | Just `yield* ctx.run(fn)` |
-| Message queue between steps | Unnecessary complexity | `yield* ctx.run(step1); yield* ctx.run(step2);` |
+| Retry wrapper with exponential backoff | Built into Resonate | Just call `ctx.run(fn)` |
+| Message queue between steps | Unnecessary complexity | Call `ctx.run(step1)` then `ctx.run(step2)` |
 | Distributed locks / mutexes | Resonate handles coordination | Use structured concurrency |
 | Saga pattern with compensation tables | `ctx.run()` already checkpoints | Write sequential code with try/catch |
 | Event bus for workflow events | Polling or promises work | Query Resonate server directly |
@@ -94,9 +96,9 @@ function* processOrder(ctx: Context, orderId: string) {
 - ❌ Status tracking table (query Resonate)
 - ❌ Error logging service (Resonate tracks failures)
 
-## The Generator Pattern is Your Friend
+## Sequential Code with Pause Points
 
-Generators (`function*` with `yield*`) might look unfamiliar, but they're just sequential code with pause points:
+A Resonate workflow is just sequential code with pause points. The shape is the same in every SDK — only the syntax differs: in TypeScript it's a generator (`function*` / `yield*`), in Python a generator (`yield`), in Rust/Go an `async fn`/func that awaits each step.
 
 ```ts
 function* workflow(ctx: Context) {
@@ -107,7 +109,7 @@ function* workflow(ctx: Context) {
 }
 ```
 
-**Mental model:** Each `yield*` is a save point in a video game. If the game crashes, you resume from the last save, not from the beginning.
+**Mental model:** Each pause point (`yield*` in TypeScript, `yield` in Python, `.await`/`Await` in Rust/Go) is a save point in a video game. If the game crashes, you resume from the last save, not from the beginning.
 
 ## Common Over-Engineering Mistakes
 
@@ -169,6 +171,8 @@ function* workflow(ctx: Context, data: any) {
 }
 ```
 
+> Retry *defaults* differ per SDK — e.g. Go bounds to 3 attempts by default, while TypeScript/Python retry effectively unbounded. If you need a specific retry budget, set it explicitly rather than hand-rolling a loop. See `resonate-defaults`.
+
 ### Mistake 3: Event-Driven Workflow Status
 
 ```ts
@@ -196,16 +200,18 @@ Only add complexity when you have a **concrete, present need**:
 
 | Need | Solution |
 |------|----------|
-| Human must approve before continuing | `yield* ctx.promise()` |
-| Need to wait for external webhook | `yield* ctx.promise()` |
-| Need to run multiple things in parallel | `yield* ctx.beginRun()` then `yield* future` |
-| Need to call a different service | `yield* ctx.rpc()` |
-| Need to wait for a specific time | `yield* ctx.sleep()` |
+| Human must approve before continuing | `ctx.promise()` |
+| Need to wait for external webhook | `ctx.promise()` |
+| Need to run multiple things in parallel | Start several calls without awaiting, then await them all (see your per-SDK skill) |
+| Need to call a different service | `ctx.rpc()` |
+| Need to wait for a specific time | `ctx.sleep()` |
+
+Method names are shown in TypeScript/Python casing; Go uses PascalCase (`ctx.Promise`, `ctx.RPC`, `ctx.Sleep`, `ctx.Run`).
 
 ## Summary: The Resonate Mindset
 
 1. **Write sequential code** - Just describe what should happen, step by step
-2. **Trust the checkpoints** - Every `yield*` is a durable save point
+2. **Trust the checkpoints** - Every durable step is a save point
 3. **Don't build infrastructure** - Resonate IS the infrastructure
 4. **Query Resonate for state** - Don't duplicate state in a database
 5. **Let errors propagate** - Resonate handles retries

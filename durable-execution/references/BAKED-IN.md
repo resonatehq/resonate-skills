@@ -2,6 +2,8 @@
 
 Add crash recovery and exactly-once execution to any application using only your existing database. No framework, no infrastructure, no dependencies.
 
+> **Language note.** Examples here are TypeScript + SQL. The technique (idempotency keys, step checkpointing, outbox) is language-agnostic — it relies only on your database, not on any Resonate SDK. Port the same shape to your language of choice.
+
 ---
 
 ## The Schema

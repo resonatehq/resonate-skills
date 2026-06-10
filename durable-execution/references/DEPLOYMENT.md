@@ -1,6 +1,8 @@
 # Deploying Resonate Server to Production
 
-The Resonate server is a single-binary Go + SQLite server. No Postgres, no Redis, no Kubernetes. Deploy it like any other Go application.
+The open-source Resonate server (`resonatehq/resonate`) is a single-binary Rust + SQLite server. No Postgres, no Redis, no Kubernetes. Deploy it like any other small static binary.
+
+> **Language note.** Code examples here are shown in **TypeScript**. The durable-execution concepts are identical across all four Resonate SDKs — only the syntax differs (Python uses bare `yield`, Rust uses `async fn` + `.await`, Go uses ordinary funcs + `Future.Await`). For concrete, idiomatic syntax in your language, see the per-SDK skills: `resonate-basic-durable-world-usage-{typescript,python,rust,go}` (and the matching pattern/debugging skills).
 
 ---
 
@@ -12,7 +14,7 @@ The Resonate server is a single-binary Go + SQLite server. No Postgres, no Redis
 | Memory | 256 MB | 512 MB - 1 GB |
 | Disk | 100 MB SSD | 1 GB+ SSD |
 | Network | 1 port (default 8001) | + port 9090 for metrics |
-| Runtime | Go 1.21+ | Go 1.21+ |
+| Runtime | None (prebuilt binary) | None (prebuilt binary); Rust 1.94+ only if building from source |
 
 That's it. No database server, no message broker, no cluster.
 
@@ -22,15 +24,20 @@ That's it. No database server, no message broker, no cluster.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESONATE_PORT` | `8001` | Protocol endpoint |
-| `RESONATE_HOST` | `0.0.0.0` | Bind address |
-| `RESONATE_DB_PATH` | `./resonate.db` | SQLite file path — **use an absolute path in production** |
-| `RESONATE_METRICS_PORT` | `9090` | Prometheus metrics endpoint |
-| `RESONATE_TICK_INTERVAL` | `100` | Background processing interval in ms (100-500ms for production) |
-| `RESONATE_TASK_LEASE_TIMEOUT` | `30000` | Task lease TTL in ms |
-| `RESONATE_TASK_RETRY_TIMEOUT` | `5000` | Pending task retry interval in ms |
-| `RESONATE_AUTH_PUBLIC_KEY` | _(disabled)_ | Path to RS256 PEM public key for JWT auth |
-| `RESONATE_LOG_LEVEL` | `info` | `info` or `debug` |
+| `RESONATE_SERVER__HOST` | `localhost` | HTTP server host |
+| `RESONATE_SERVER__PORT` | `8001` | HTTP API port |
+| `RESONATE_SERVER__BIND` | `0.0.0.0` | Bind address |
+| `RESONATE_SERVER__URL` | `http://{host}:{port}` | Externally-reachable URL — **required for distributed deployments where workers call back** |
+| `RESONATE_LEVEL` | `info` | Log level: `debug`/`info`/`warn`/`error` |
+| `RESONATE_STORAGE__TYPE` | `sqlite` | `sqlite` / `postgres` / `mysql` |
+| `RESONATE_STORAGE__SQLITE__PATH` | `resonate.db` | SQLite file path — **use an absolute path in production** |
+| `RESONATE_STORAGE__POSTGRES__URL` | — | Postgres connection string |
+| `RESONATE_AUTH__PUBLICKEY` | _(disabled)_ | Path to RS256 PEM public key for JWT auth |
+| `RESONATE_TASKS__LEASE_TIMEOUT` | `15000` | Task lease timeout (ms) |
+| `RESONATE_TASKS__RETRY_TIMEOUT` | `30000` | Suspend/wake retry interval (ms); lower to `500` for chained/recursive workflows |
+| `RESONATE_OBSERVABILITY__METRICS_PORT` | `9090` | Prometheus metrics port (`0` disables) |
+
+Run `resonate serve --help` for the full, authoritative flag list.
 
 ---
 
@@ -39,9 +46,17 @@ That's it. No database server, no message broker, no cluster.
 The lowest-cost production deployment. A $5/mo VPS (Hetzner, DigitalOcean, Linode) handles substantial workloads.
 
 ```bash
-# Clone and build
-git clone https://github.com/resonatehq/resonate.git /opt/resonate
-cd /opt/resonate && go build -o resonate-server .
+# Download the prebuilt binary from GitHub releases (recommended):
+# https://github.com/resonatehq/resonate/releases
+# Example for Linux x86_64:
+curl -L https://github.com/resonatehq/resonate/releases/latest/download/resonate-linux-amd64 \
+  -o /usr/local/bin/resonate-server
+chmod +x /usr/local/bin/resonate-server
+
+# Alternatively, build from source (requires Rust toolchain):
+# git clone https://github.com/resonatehq/resonate.git /opt/resonate
+# cd /opt/resonate && cargo build --release
+# cp target/release/resonate /usr/local/bin/resonate-server
 
 # Create data directory
 mkdir -p /data/resonate
@@ -59,10 +74,10 @@ After=network.target
 Type=simple
 User=resonate
 WorkingDirectory=/opt/resonate
-Environment=RESONATE_DB_PATH=/data/resonate/resonate.db
-Environment=RESONATE_PORT=8001
-Environment=RESONATE_HOST=0.0.0.0
-ExecStart=/opt/resonate/resonate-server
+Environment=RESONATE_STORAGE__SQLITE__PATH=/data/resonate/resonate.db
+Environment=RESONATE_SERVER__PORT=8001
+Environment=RESONATE_SERVER__BIND=0.0.0.0
+ExecStart=/usr/local/bin/resonate-server
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
@@ -87,19 +102,19 @@ journalctl -u resonate -f
 ## Option 2: Docker
 
 ```dockerfile
-FROM golang:1.21 AS builder
+FROM rust:1.94-slim-bookworm AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=1 go build -o resonate-server .
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+RUN cargo build --release
 
-FROM debian:bookworm-slim
-COPY --from=builder /app/resonate-server /usr/local/bin/
-ENV RESONATE_DB_PATH=/data/resonate.db
-ENV RESONATE_HOST=0.0.0.0
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/resonate /usr/local/bin/resonate-server
 EXPOSE 8001 9090
-CMD ["resonate-server"]
+ENTRYPOINT ["resonate-server"]
+CMD ["serve"]
 ```
 
 ```bash
@@ -128,7 +143,7 @@ fly volumes create resonate_data --size 1 --region ord
 #     source = "resonate_data"
 #     destination = "/data"
 #   [env]
-#     RESONATE_DB_PATH = "/data/resonate.db"
+#     RESONATE_STORAGE__SQLITE__PATH = "/data/resonate.db"
 
 fly deploy
 ```
@@ -173,11 +188,11 @@ jwt encode --secret @private_key.pem -A RS256 --exp='+90 days' '{"prefix":""}'
 
 ```bash
 # Add to systemd service:
-Environment=RESONATE_AUTH_PUBLIC_KEY=/etc/resonate/public_key.pem
+Environment=RESONATE_AUTH__PUBLICKEY=/etc/resonate/public_key.pem
 
 # Or Docker:
 docker run -v /path/to/public_key.pem:/etc/resonate/public_key.pem:ro \
-  -e RESONATE_AUTH_PUBLIC_KEY=/etc/resonate/public_key.pem \
+  -e RESONATE_AUTH__PUBLICKEY=/etc/resonate/public_key.pem \
   resonate-server
 ```
 
@@ -230,16 +245,18 @@ server {
 ## Health Check
 
 ```bash
-curl -sf http://localhost:9090/metrics && echo "healthy" || echo "unhealthy"
+curl -sf http://localhost:8001/health && echo "healthy" || echo "unhealthy"
 ```
+
+The health route is `/health` on the API port (`8001`), not `/healthz`. (Port `9090` serves Prometheus `/metrics`, not health.)
 
 For container orchestrators:
 
 ```yaml
 livenessProbe:
   httpGet:
-    path: /metrics
-    port: 9090
+    path: /health
+    port: 8001
   initialDelaySeconds: 5
   periodSeconds: 10
 ```
@@ -286,7 +303,7 @@ Resonate costs 3-100x less than managed alternatives because it has zero externa
 
 ## Production Checklist
 
-- [ ] `RESONATE_DB_PATH` set to absolute path on persistent storage
+- [ ] `RESONATE_STORAGE__SQLITE__PATH` set to absolute path on persistent storage
 - [ ] systemd/Docker configured with auto-restart
 - [ ] JWT auth enabled if server is network-accessible
 - [ ] Reverse proxy with SSL configured

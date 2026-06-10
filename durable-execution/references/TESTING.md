@@ -2,6 +2,10 @@
 
 How to verify that your durable workflows actually survive crashes, replay correctly, and maintain consistency. This is the part most tutorials skip.
 
+> **Language note.** Code examples here are shown in **TypeScript**. The durable-execution concepts are identical across all four Resonate SDKs — only the syntax differs (Python uses bare `yield`, Rust uses `async fn` + `.await`, Go uses ordinary funcs + `Future.Await`). For concrete, idiomatic syntax in your language, see the per-SDK skills: `resonate-basic-durable-world-usage-{typescript,python,rust,go}` (and the matching pattern/debugging skills).
+
+The testing *strategies* (kill-and-resume, replay assertions, idempotency checks, DST) apply to every SDK; the tooling shown is TypeScript. See the per-SDK debugging skills (`resonate-basic-debugging-{typescript,python,rust,go}`) for language-specific test tooling.
+
 ---
 
 ## The Question

@@ -5,7 +5,8 @@ description: >-
   and the tradeoffs between rolling your own (just your DB) versus using a
   framework like Resonate. Read this BEFORE picking an implementation. For the
   Resonate SDK's concrete Context API (ctx.run, ctx.sleep, ctx.promise,
-  structured concurrency), use resonate-basic-durable-world-usage-typescript.
+  structured concurrency), use the per-SDK skill for your language —
+  resonate-basic-durable-world-usage-{typescript,python,rust,go}.
 license: Apache-2.0
 ---
 
@@ -74,7 +75,7 @@ Does your workflow need...
 | **Serverless** | Yes (any runtime) | Yes (Lambda, Edge Functions) | No (requires always-on cluster) |
 | **Setup time** | Minutes | 5 minutes | Hours to days |
 | **Patterns** | Checkpoint, idempotency, outbox | All 5 patterns + distributed coordination | All patterns + enterprise features |
-| **Learning curve** | Low (just SQL + your code) | Low (generator functions) | High (proprietary DSL + concepts) |
+| **Learning curve** | Low (just SQL + your code) | Low (sequential code — generators in TS/Py, async/await in Rust/Go) | High (proprietary DSL + concepts) |
 | **When it fits** | Single-service, sequential workflows | Multi-service, any complexity | Large teams with dedicated infra staff |
 
 ---
@@ -141,9 +142,11 @@ for (const msg of pending) {
 
 ## With Resonate — Durable Execution Platform
 
-Resonate is a single-binary server (Bun + SQLite, zero external deps) paired with a tiny SDK. Runs anywhere — VPS, serverless, edge functions. Costs ~$5/mo on a small VPS.
+Resonate's open-source server is a single binary (Rust + SQLite, zero external deps) paired with a tiny SDK. Runs anywhere — VPS, serverless, edge functions. Costs ~$5/mo on a small VPS.
 
-Your code is a generator function. Each `yield` is a durable checkpoint. If the process crashes, the server re-dispatches the work to any available worker, which replays from the last checkpoint.
+Your code is an ordinary function with durable steps — a generator in TypeScript/Python, an `async fn`/func in Rust/Go. Each durable step (`yield*`/`yield`, `.await`, `Future.Await`) is a checkpoint. If the process crashes, the server re-dispatches the work to any available worker, which replays from the last checkpoint.
+
+> **Language note.** The examples below (and in this skill's references) are shown in **TypeScript**. The concepts are identical across all four Resonate SDKs; only the syntax differs. For concrete, idiomatic syntax in your language, see the per-SDK skills — `resonate-basic-durable-world-usage-{typescript,python,rust,go}` for the Context API, and the matching `resonate-saga-pattern-*` / `resonate-recursive-fan-out-pattern-*` / `resonate-human-in-the-loop-pattern-*` skills (and `resonate-durable-sleep-scheduled-work-{typescript,rust,go}`) for the patterns shown here.
 
 ```typescript
 import { Resonate, type Context } from "@resonatehq/sdk";
@@ -151,10 +154,10 @@ import { Resonate, type Context } from "@resonatehq/sdk";
 const resonate = new Resonate({ url: "http://localhost:8001" });
 
 resonate.register("processOrder", function* (ctx: Context, orderId: string) {
-  const order   = yield ctx.run(fetchOrder, orderId);
-  const payment = yield ctx.run(chargeCard, order);
-  const shipment = yield ctx.run(createShipment, order);
-  yield ctx.run(sendConfirmation, order.email);
+  const order   = yield* ctx.run(fetchOrder, orderId);
+  const payment = yield* ctx.run(chargeCard, order);
+  const shipment = yield* ctx.run(createShipment, order);
+  yield* ctx.run(sendConfirmation, order.email);
   return { payment, shipment };
 });
 
@@ -162,12 +165,12 @@ await resonate.start();
 await resonate.invoke("processOrder", ["order-42"], { id: "order-42" });
 ```
 
-That's it. Each `yield ctx.run(...)` is checkpointed. Crash recovery, retries, and replay are automatic.
+That's it. Each `yield* ctx.run(...)` is checkpointed. Crash recovery, retries, and replay are automatic.
 
 **Get running in 5 minutes:** See `references/RESONATE-QUICKSTART.md`.
 **All patterns with full code:** See `references/RESONATE-PATTERNS.md`.
-**SDK API reference:** See `references/RESONATE-SDK.md`.
-**Starter template:** Copy `assets/resonate-worker.ts`.
+**SDK API reference (TypeScript):** See `references/RESONATE-SDK.md` (for Python/Rust/Go, see `resonate-basic-durable-world-usage-{python,rust,go}`).
+**Starter template (TypeScript):** Copy `assets/resonate-worker.ts` (the `assets/` templates are TypeScript; for other languages start from the per-SDK skill).
 
 ---
 
@@ -181,13 +184,13 @@ Each step is checkpointed. On failure, compensate in reverse order.
 function* orderSaga(ctx: Context, orderId: string) {
   const completed: string[] = [];
   try {
-    yield ctx.run(reserveInventory, orderId); completed.push("inventory");
-    yield ctx.run(chargePayment, orderId);    completed.push("payment");
-    yield ctx.run(createShipment, orderId);   completed.push("shipment");
+    yield* ctx.run(reserveInventory, orderId); completed.push("inventory");
+    yield* ctx.run(chargePayment, orderId);    completed.push("payment");
+    yield* ctx.run(createShipment, orderId);   completed.push("shipment");
     return { status: "success" };
   } catch (error) {
     for (const step of completed.reverse()) {
-      yield ctx.run(compensate, step, orderId);
+      yield* ctx.run(compensate, step, orderId);
     }
     return { status: "rolled-back", compensated: completed };
   }
@@ -204,7 +207,7 @@ Dispatch work to parallel workers via RPC. Each branch is independently durable.
 function* batchProcess(ctx: Context, items: string[]) {
   const results: string[] = [];
   for (const item of items) {
-    const result = yield ctx.rpc("processItem", [item], {
+    const result = yield* ctx.rpc("processItem", [item], {
       target: "poll://any@item-workers"
     });
     results.push(result);
@@ -222,11 +225,11 @@ Workflow suspends without holding resources. Resumes when a human (or webhook) r
 ```typescript
 function* approvalFlow(ctx: Context, orderId: string) {
   const approvalId = `approval-${orderId}`;
-  yield ctx.run(sendApprovalEmail, orderId, approvalId);
-  const decision = yield ctx.promise(approvalId, {
+  yield* ctx.run(sendApprovalEmail, orderId, approvalId);
+  const decision = yield* ctx.promise(approvalId, {
     timeoutAt: Date.now() + 48 * 60 * 60 * 1000  // 48 hours
   });
-  if (decision === "approved") yield ctx.run(processOrder, orderId);
+  if (decision === "approved") yield* ctx.run(processOrder, orderId);
   return decision;
 }
 ```
@@ -239,11 +242,11 @@ Sleep is durable. Process can die and restart — the timer still fires.
 
 ```typescript
 function* onboarding(ctx: Context, userId: string) {
-  yield ctx.run(sendEmail, userId, "Welcome!");
-  yield ctx.sleep(24 * 60 * 60 * 1000);  // 1 day — survives crashes
-  yield ctx.run(sendEmail, userId, "Getting started tips");
-  yield ctx.sleep(6 * 24 * 60 * 60 * 1000);  // 6 days
-  yield ctx.run(sendEmail, userId, "How are we doing?");
+  yield* ctx.run(sendEmail, userId, "Welcome!");
+  yield* ctx.sleep(24 * 60 * 60 * 1000);  // 1 day — survives crashes
+  yield* ctx.run(sendEmail, userId, "Getting started tips");
+  yield* ctx.sleep(6 * 24 * 60 * 60 * 1000);  // 6 days
+  yield* ctx.run(sendEmail, userId, "How are we doing?");
 }
 ```
 
@@ -255,11 +258,11 @@ Each method call is a durable step on a persistent entity.
 
 ```typescript
 function* orderLifecycle(ctx: Context, orderId: string) {
-  const order = yield ctx.run(createOrder, orderId);
-  yield ctx.run(validateOrder, order);
-  const payment = yield ctx.run(processPayment, order);
-  yield ctx.run(fulfillOrder, order, payment);
-  yield ctx.run(notifyCustomer, order);
+  const order = yield* ctx.run(createOrder, orderId);
+  yield* ctx.run(validateOrder, order);
+  const payment = yield* ctx.run(processPayment, order);
+  yield* ctx.run(fulfillOrder, order, payment);
+  yield* ctx.run(notifyCustomer, order);
   return { orderId, status: "fulfilled" };
 }
 ```
@@ -335,23 +338,27 @@ The lowest-cost durable execution is the one that runs on what you already have.
 ## Anti-Patterns
 
 - **Making everything durable** — Not every function needs crash recovery. Only durabilize the critical path. The rest can use simple retries.
-- **Ignoring replay semantics** — Code that works on first run but breaks on replay: random IDs, `Date.now()` in control flow, external reads that return different values. Wrap non-deterministic operations as durable steps.
+- **Ignoring replay semantics** — Code that works on first run but breaks on replay: random IDs, reading the wall clock in control flow (`Date.now()` in TS, `time.time()` in Python, `Instant::now()` in Rust, `time.Now()` in Go), external reads that return different values. Wrap non-deterministic operations as durable steps.
 - **Treating it as a queue** — Durable execution is not a task queue. If you just need "retry this job," use a queue. Durable execution is for multi-step workflows with state.
 - **Skipping idempotency on external calls** — Durable execution guarantees at-least-once execution of each step. Without idempotency keys on external APIs, you get duplicate charges, emails, and API calls.
 - **Over-abstracting early** — Pick one pattern (usually saga or checkpoint), prove it works in your codebase, then expand. Don't build a generic workflow engine before you have a concrete use case.
 
 ---
 
-## Quick Reference — Resonate Context API
+## Quick Reference — Resonate Context API (TypeScript syntax)
+
+The shapes below are TypeScript (`yield*`). Python uses bare `yield`, Rust marks the function `#[resonate::function]` and writes `ctx.run(...).await?`, Go uses `ctx.Run`/`ctx.RPC`/`ctx.Sleep`/`ctx.Promise` (PascalCase) then `f.Await(&out)`. See `resonate-basic-durable-world-usage-{typescript,python,rust,go}` for each. Durations are milliseconds in TypeScript, seconds in Python, and native `Duration` in Rust/Go.
 
 | Method | Purpose | Example |
 |--------|---------|---------|
-| `yield ctx.run(fn, ...args)` | Local durable step (checkpoint) | `yield ctx.run(chargeCard, order)` |
-| `yield ctx.rpc(name, args, opts)` | Remote durable step (cross-service) | `yield ctx.rpc("process", [item], { target: "poll://any@workers" })` |
-| `yield ctx.sleep(ms)` | Durable timer (survives crashes) | `yield ctx.sleep(86_400_000)` |
-| `yield ctx.promise(id, opts)` | Suspend until external resolution | `yield ctx.promise("approval-123", { timeoutAt: ... })` |
+| `yield* ctx.run(fn, ...args)` | Local durable step (checkpoint) | `yield* ctx.run(chargeCard, order)` |
+| `yield* ctx.rpc(name, args, opts)` | Remote durable step (cross-service) | `yield* ctx.rpc("process", [item], { target: "poll://any@workers" })` |
+| `yield* ctx.sleep(ms)` | Durable timer (survives crashes) | `yield* ctx.sleep(86_400_000)` |
+| `yield* ctx.promise(id, opts)` | Suspend until external resolution | `yield* ctx.promise("approval-123", { timeoutAt: ... })` |
 
 ## Asset Templates
+
+The asset templates are **TypeScript**. For Python/Rust/Go, start from the per-SDK `resonate-basic-durable-world-usage-*` (and pattern) skills instead.
 
 | Template | Use when... |
 |----------|-------------|
@@ -369,7 +376,7 @@ The lowest-cost durable execution is the one that runs on what you already have.
 | `references/BAKED-IN.md` | Implementing framework-free durability with just your DB |
 | `references/RESONATE-QUICKSTART.md` | Setting up Resonate from scratch |
 | `references/RESONATE-PATTERNS.md` | Implementing a specific pattern with Resonate |
-| `references/RESONATE-SDK.md` | Needing SDK API details, configuration, or wire protocol info |
+| `references/RESONATE-SDK.md` | Needing **TypeScript** SDK API details, configuration, or wire protocol info (other SDKs: see `resonate-basic-durable-world-usage-{python,rust,go}`) |
 | `references/TESTING.md` | Verifying that durability actually works under failure |
 | `references/DEPLOYMENT.md` | Deploying to production (VPS, serverless, Docker) |
 | `references/TROUBLESHOOTING.md` | Debugging workflow hangs, failures, or unexpected behavior |

@@ -1,6 +1,6 @@
 ---
 name: resonate-defaults
-description: Look up default values across the Resonate server and SDKs (TypeScript, Python, Rust). Use when answering "what is the default for X?" — retry policies, ctx.run timeouts, Options fields, init parameters, server flags, or RESONATE_* environment variables. Directs to the canonical defaults reference and the per-SDK source files; do not deflect to "check the SDK source" — read the source listed here.
+description: Look up default values across the Resonate server and SDKs (TypeScript, Python, Rust, Go). Use when answering "what is the default for X?" — retry policies, ctx.run timeouts, Options fields, init parameters, server flags, or RESONATE_* environment variables. Directs to the canonical defaults reference and the per-SDK source files; do not deflect to "check the SDK source" — read the source listed here.
 license: Apache-2.0
 ---
 
@@ -54,6 +54,15 @@ When the canonical page does not answer the question, read these files directly.
 - `resonate/src/options.rs` — `Options` struct defaults (note: no per-call `retry_policy` field)
 - `resonate/src/resonate.rs` — init defaults (`group`, `ttl`, `pid`, env-var resolution)
 
+### Go SDK ([`resonatehq/resonate-sdk-go`](https://github.com/resonatehq/resonate-sdk-go))
+
+Pre-release — no semver tag yet; values verified against `develop/go.mdx` and the SDK at commit `22076134651f`. The canonical doc-page summary lives in the [Go SDK skill guide § Defaults](https://docs.resonatehq.io/develop/go#defaults).
+
+- `resonate.go` — `Config` defaults (`TTL` 60s, `AsyncHeartbeat`, `NoopEncryptor`, empty `Prefix`), `New` network resolution (`URL` → `Network` → `RESONATE_URL` → `ErrNetworkRequired`), `DefaultTopLevelTimeout`, `DefaultRetryPolicy`
+- `context.go` — child-call defaults (`DefaultChildTimeout`), `RunOpts`/`RPCOpts`/`PromiseOpts`/`DetachedOpts`
+- the retry-policy types (`ConstantRetry`, `LinearRetry`, `ExponentialRetry`, `NoRetry`) and `NewNonRetryable`
+- `httpnet/http.go` — `HTTPOptions{Group}` (the default group is `"default"`); groups are set on the transport, not on `Config`
+
 ### Server ([`resonatehq/resonate`](https://github.com/resonatehq/resonate))
 
 Server flag defaults are mirrored on the operator-facing page <https://docs.resonatehq.io/deploy/run-server#configuration> until iter-65 lands file:line citations from the server crate.
@@ -64,55 +73,56 @@ The values below mirror the canonical page. If you cite from this table, the val
 
 ### Retry policies (per-call options)
 
-| Policy | TypeScript default | Python default | Rust |
-|---|---|---|---|
-| `Exponential` `delay` | `1000` ms | `1` sec | not exposed |
-| `Exponential` `factor` | `2` | `2` | not exposed |
-| `Exponential` `maxRetries` / `max_retries` | `Number.MAX_SAFE_INTEGER` | `sys.maxsize` | not exposed |
-| `Exponential` `maxDelay` / `max_delay` | `30_000` ms | `30` sec | not exposed |
-| `Constant` `delay` | `1000` ms | `1` sec | not exposed |
-| `Constant` `maxRetries` / `max_retries` | `Number.MAX_SAFE_INTEGER` | `sys.maxsize` | not exposed |
-| `Linear` `delay` | `1000` ms | `1` sec | not exposed |
-| `Linear` `maxRetries` / `max_retries` | `Number.MAX_SAFE_INTEGER` | `sys.maxsize` | not exposed |
-| `Never` | no parameters | no parameters | not exposed |
+| Policy | TypeScript default | Python default | Rust | Go |
+|---|---|---|---|---|
+| `Exponential` `delay` / `Base` | `1000` ms | `1` sec | not exposed | `Base 100ms` (in `DefaultRetryPolicy`) |
+| `Exponential` `factor` | `2` | `2` | not exposed | `×2` (implicit) |
+| `Exponential` `maxRetries` / `MaxAttempts` | `Number.MAX_SAFE_INTEGER` | `sys.maxsize` | not exposed | **`MaxAttempts: 3`** (bounded) |
+| `Exponential` `maxDelay` / `Max` | `30_000` ms | `30` sec | not exposed | `Max 30s` |
+| `Constant` `delay` / `Delay` | `1000` ms | `1` sec | not exposed | required field (`ConstantRetry{MaxAttempts, Delay}`) |
+| `Constant` `maxRetries` / `MaxAttempts` | `Number.MAX_SAFE_INTEGER` | `sys.maxsize` | not exposed | required field |
+| `Linear` `delay` / `Base` | `1000` ms | `1` sec | not exposed | required field (`LinearRetry{MaxAttempts, Base}`) |
+| `Linear` `maxRetries` / `MaxAttempts` | `Number.MAX_SAFE_INTEGER` | `sys.maxsize` | not exposed | required field |
+| `Never` / `NoRetry` | no parameters | no parameters | not exposed | `NoRetry` (no parameters) |
 
-Both TS and Py compute the n-th `Exponential` delay as `min(delay * factor^attempt, maxDelay)`; `Linear` is `delay * attempt`; `Never` is `0` on attempt 0 and `null`/`None` after.
+Both TS and Py compute the n-th `Exponential` delay as `min(delay * factor^attempt, maxDelay)`; `Linear` is `delay * attempt`; `Never` is `0` on attempt 0 and `null`/`None` after. **Go's retry policies ARE exposed (unlike Rust)** as the `ConstantRetry` / `LinearRetry` / `ExponentialRetry` / `NoRetry` structs implementing `resonate.RetryPolicy`, and Go's `DefaultRetryPolicy` is `ExponentialRetry{MaxAttempts: 3, Base: 100ms, Max: 30s, Jitter: true}` — a **bounded 3-attempt** default, the sharpest cross-SDK asymmetry (see below). Go durations are native `time.Duration`, never raw ms/sec.
 
 ### `ctx.run` / per-call `Options` defaults
 
-| Field | TypeScript | Python | Rust |
-|---|---|---|---|
-| `id` | `undefined` (auto) | `None` (auto) | n/a (struct does not carry it) |
-| `timeout` | `86_400_000` ms = **24 h** | `31_536_000` sec = **1 year** | `Duration::from_secs(86_400)` = **24 h** |
-| `target` | `"default"` | `"default"` | `"default"` |
-| `tags` | `{}` | `{}` | empty `HashMap` |
-| `version` | `0` | `0` | `0` |
-| `retryPolicy` / `retry_policy` | resolved at call time: `Exponential()` for regular fn, `Never()` for generator fn | `lambda f: Never() if isgeneratorfunction(f) else Exponential()` | **no per-call retry policy** (see asymmetries) |
-| `nonRetryableErrors` / `non_retryable_exceptions` | `[]` | `()` | n/a |
-| `durable` | n/a | `True` | n/a |
-| `idempotency_key` | n/a | `lambda id: id` (identity) | n/a |
-| `encoder` | n/a | `None` | n/a |
+| Field | TypeScript | Python | Rust | Go |
+|---|---|---|---|---|
+| `id` | `undefined` (auto) | `None` (auto) | n/a (struct does not carry it) | n/a (passed to `Run`/`RPC`, not the opts struct) |
+| `timeout` | `86_400_000` ms = **24 h** | `31_536_000` sec = **1 year** | `Duration::from_secs(86_400)` = **24 h** | `DefaultChildTimeout` / `DefaultTopLevelTimeout` = **24 h** (`time.Duration`) |
+| `target` | `"default"` | `"default"` | `"default"` | configured group (`"default"`) |
+| `tags` | `{}` | `{}` | empty `HashMap` | `nil` map |
+| `version` | `0` | `0` | `0` | reserved, not yet consumed ([issue #5](https://github.com/resonatehq/resonate-sdk-go/issues/5)) |
+| `retryPolicy` / `retry_policy` / `RetryPolicy` | resolved at call time: `Exponential()` for regular fn, `Never()` for generator fn | `lambda f: Never() if isgeneratorfunction(f) else Exponential()` | **no per-call retry policy** (see asymmetries) | **has per-call `RetryPolicy`** (like TS/Py); nil → `DefaultRetryPolicy` = `ExponentialRetry{MaxAttempts: 3, ...}` |
+| `nonRetryableErrors` / `non_retryable_exceptions` | `[]` | `()` | n/a | via `resonate.NewNonRetryable(err)` wrapper |
+| `durable` | n/a | `True` | n/a | n/a |
+| `idempotency_key` | n/a | `lambda id: id` (identity) | n/a | n/a |
+| `encoder` / `Encryptor` | n/a | `None` | n/a | `NoopEncryptor` (set on `Config.Encryptor`) |
 
-The short answer to **"what does `ctx.run` retry by default in the TypeScript SDK?"** is `Exponential()` (1 s base, ×2 factor, 30 s cap, effectively unbounded retries) for regular `async` functions, and `Never()` for generator functions.
+The short answer to **"what does `ctx.run` retry by default in the TypeScript SDK?"** is `Exponential()` (1 s base, ×2 factor, 30 s cap, effectively unbounded retries) for regular `async` functions, and `Never()` for generator functions. **In Go the answer is different: `DefaultRetryPolicy` is bounded to 3 attempts** (`ExponentialRetry{MaxAttempts: 3, Base: 100ms, Max: 30s, Jitter: true}`).
 
-### Init defaults (`new Resonate()` / `Resonate()` / `Resonate::local()`)
+### Init defaults (`new Resonate()` / `Resonate()` / `Resonate::local()` / `resonate.New(Config{})`)
 
-| Field | TypeScript | Python | Rust |
-|---|---|---|---|
-| `group` | `"default"` | `"default"` | `"default"` |
-| `ttl` | `60_000` ms = **60 sec** | `10` sec | `60_000` ms (remote) / `u64::MAX` (local) |
-| `pid` | random UUID | `uuid.uuid4().hex` | `"default"` (local) / from network (remote) |
-| `verbose` / `log_level` | `verbose=false`, `logLevel="warn"` | `logging.INFO` | n/a |
-| `prefix` | `RESONATE_PREFIX` or empty | n/a | `RESONATE_PREFIX` or empty |
-| `workers` / concurrency cap | **none** (event loop) | `min(32, workers or os.cpu_count() or 1)` | **none** (Tokio runtime) |
-| HTTP request timeout | `RESONATE_TIMEOUT` or `10_000` ms | n/a | n/a |
-| HTTP URL fallback | `"http://localhost:8001"` | derived from scheme/host/port | derived from scheme/host/port |
+| Field | TypeScript | Python | Rust | Go |
+|---|---|---|---|---|
+| `group` | `"default"` | `"default"` | `"default"` | `"default"` (set on the transport via `httpnet.HTTPOptions{Group}`, NOT on `Config`) |
+| `ttl` | `60_000` ms = **60 sec** | `10` sec | `60_000` ms (remote) / `u64::MAX` (local) | `60s` (`Config.TTL`, a `time.Duration`) |
+| `pid` | random UUID | `uuid.uuid4().hex` | `"default"` (local) / from network (remote) | from network (`localnet.NewLocal` takes an explicit `*pid`) |
+| `verbose` / `log_level` | `verbose=false`, `logLevel="warn"` | `logging.INFO` | n/a | n/a |
+| `prefix` | `RESONATE_PREFIX` or empty | n/a | `RESONATE_PREFIX` or empty | `Config.Prefix` (empty; **not** read from env) |
+| `heartbeat` | n/a | n/a | n/a | `AsyncHeartbeat` at `TTL/2` (use `NoopHeartbeat{}` with `localnet`) |
+| `workers` / concurrency cap | **none** (event loop) | `min(32, workers or os.cpu_count() or 1)` | **none** (Tokio runtime) | **none** (goroutines) |
+| HTTP request timeout | `RESONATE_TIMEOUT` or `10_000` ms | n/a | n/a | n/a |
+| HTTP URL fallback | `"http://localhost:8001"` | derived from scheme/host/port | derived from scheme/host/port | **none** — `URL`→`Network`→`RESONATE_URL`, else `ErrNetworkRequired` |
 
 ### Environment variables
 
 | Env var | Default when unset |
 |---|---|
-| `RESONATE_URL` | unset → local in-memory mode in all three SDKs; TS `HttpNetwork` falls back to `"http://localhost:8001"` |
+| `RESONATE_URL` | unset → local in-memory mode in TS/Py/Rs; TS `HttpNetwork` falls back to `"http://localhost:8001"`. **Go is the exception:** unset (with no `Config.URL`/`Network`) → `ErrNetworkRequired`, not a localhost fallback |
 | `RESONATE_HOST` | unset (Py + Rs only — TS does not consume it) |
 | `RESONATE_SCHEME` | `"http"` (Py + Rs) |
 | `RESONATE_PORT` | `"8001"` (Py + Rs) |
@@ -121,6 +131,8 @@ The short answer to **"what does `ctx.run` retry by default in the TypeScript SD
 | `RESONATE_PASSWORD` | `""` (Py only) |
 | `RESONATE_PREFIX` | unset → empty (TS + Rs) |
 | `RESONATE_TIMEOUT` | `10_000` ms (TS HTTP only) |
+
+**Go reads ONLY `RESONATE_URL` from the environment.** It does **not** consult `RESONATE_HOST` / `RESONATE_PORT` / `RESONATE_SCHEME` / `RESONATE_TOKEN` / `RESONATE_PREFIX`. Token, prefix, and group are set explicitly on `Config` (or, for group, on the transport). The single env hook is `RESONATE_URL`; if it (and `Config.URL` / `Config.Network`) is unset, `resonate.New` returns `ErrNetworkRequired` rather than falling back to localhost.
 
 ### Server flag defaults (Rust binary)
 
@@ -147,7 +159,10 @@ The short answer to **"what does `ctx.run` retry by default in the TypeScript SD
 
 The defaults look like they line up across SDKs. They do not. Flag these explicitly when answering:
 
-- **Time units differ.** TypeScript expresses durations in **milliseconds**. Python expresses durations in **seconds**. Rust is **mixed** — `Options.timeout` is a `Duration`, but `ttl` is `u64` milliseconds. A naive copy-paste between SDKs is almost always wrong.
+- **Time units differ.** TypeScript expresses durations in **milliseconds**. Python expresses durations in **seconds**. Rust is **mixed** — `Options.timeout` is a `Duration`, but `ttl` is `u64` milliseconds. **Go uses native `time.Duration` everywhere** (`24 * time.Hour`, `100 * time.Millisecond`) — never a raw number. A naive copy-paste between SDKs is almost always wrong.
+- **Go's default retry policy is BOUNDED.** TS and Py default to effectively-unbounded retries (`Number.MAX_SAFE_INTEGER` / `sys.maxsize`). Go's `DefaultRetryPolicy` caps at `MaxAttempts: 3`. A Go workflow gives up after 3 attempts where the TS/Py equivalent would retry almost forever. This is load-bearing when porting — do not assume Go inherits the unbounded default.
+- **Per-call retry policy: Go HAS one, Rust does NOT.** Go's `RunOptions`/`RunOpts` carry a `RetryPolicy` field (like TS/Py); Rust has no per-call retry policy (server-side `--tasks-retry-timeout` governs it). Go is the TS/Py side of this split, not the Rust side.
+- **Go has no `Schedule` API and no top-level promises sub-client (yet).** External promise resolution (human-in-the-loop, webhooks) goes through the CLI (`resonate promise resolve`), the server HTTP API, or the low-level `r.Sender().PromiseSettle` (with manual JSON→base64→quoted-string `Value` encoding — [issue #28](https://github.com/resonatehq/resonate-sdk-go/issues/28)); recurring work has no `resonate.schedule(...)` equivalent. Go and Python both lack `schedule()`; TS and Rust have it.
 - **`Options.timeout` envelope.** TypeScript and Rust default to **24 h**. Python defaults to **1 year** (`31_536_000` seconds). Same field, drastically different upper bound.
 - **`ttl` unit and value.** TypeScript and Rust = `60_000` ms (= 60 s). Python = `10` sec. Same name, different unit *and* different value.
 - **Retry-policy time units.** TS retry-policy parameters are in **milliseconds**; Python's are in **seconds**. The curve shape is identical; the numbers are not.

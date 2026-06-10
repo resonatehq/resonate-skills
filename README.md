@@ -7,9 +7,10 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 ## What's in this repo today
 
 - **7 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, the CLI reference, the cross-SDK defaults reference, and the `resonate-bash` MCP tool guide that apply across every Resonate SDK.
-- **16 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
+- **15 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
 - **8 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) + HTTP service design for the Python SDK.
 - **8 Rust** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the early-development Rust SDK (v0.1.0, not yet on crates.io); every Rust skill carries an explicit v0.1.0 caveat.
+- **8 Go** per-SDK skills — basic usage (ephemeral + durable) + debugging + patterns (saga, recursive fan-out, durable-sleep, human-in-the-loop, external system of record) for the pre-release Go SDK (no semver tag yet; install `@latest` or pin a commit); every Go skill carries a pre-release caveat and notes the two surfaces the Go SDK does not yet expose — a top-level `Schedule` API and a `promises` sub-client.
 
 ## What is a skill?
 
@@ -31,7 +32,7 @@ Every skill falls into one of two categories.
 
 **Foundational skills** are language-agnostic. They teach concepts, mental models, or operational patterns that apply across every Resonate SDK. Their directory names carry no SDK suffix.
 
-**Per-SDK skills** teach idiomatic usage of a specific Resonate SDK. Their directory names and frontmatter carry an SDK suffix: `-typescript`, `-python`, or `-rust`. When the same concept applies across SDKs (e.g. sagas, HTTP services, debugging), each SDK gets its own skill — the per-SDK version expresses the pattern in the SDK's natural idioms rather than translating mechanically.
+**Per-SDK skills** teach idiomatic usage of a specific Resonate SDK. Their directory names and frontmatter carry an SDK suffix: `-typescript`, `-python`, `-rust`, or `-go`. When the same concept applies across SDKs (e.g. sagas, HTTP services, debugging), each SDK gets its own skill — the per-SDK version expresses the pattern in the SDK's natural idioms rather than translating mechanically.
 
 ### Foundational
 
@@ -113,6 +114,24 @@ Every skill falls into one of two categories.
 
 **Not yet written for Rust:** HTTP service design + deployment skills. These track SDK stability and will land when the source/docs validate the relevant paths.
 
+### Per-SDK: Go
+
+**Pre-release caveat:** the Go SDK has no semver-tagged release yet. Install with `go get github.com/resonatehq/resonate-sdk-go@latest` (resolves to a Go pseudo-version) or pin a commit for stability. APIs may change before the first tag is cut; every Go skill carries this caveat at the top, verified against `develop/go.mdx` and the `resonatehq-examples/*-go` repos.
+
+**Core SDK usage:**
+- [`resonate-basic-ephemeral-world-usage-go`](resonate-basic-ephemeral-world-usage-go/SKILL.md) — Client APIs: `resonate.New(Config)`, the package-level generic `resonate.Register`, top-level `RegisteredFunc.Run`, `Resonate.RPC` / `Resonate.Get`, typed vs untyped handles, `RunOptions`, and `Stop` semantics (don't Stop a worker).
+- [`resonate-basic-durable-world-usage-go`](resonate-basic-durable-world-usage-go/SKILL.md) — Context APIs inside durable functions: `ctx.Run` / `ctx.RPC` / `ctx.Sleep` / `ctx.Promise` / `ctx.Detached`, `Future.Await`, option structs, accessors, the bounded 3-attempt default retry, and the replay model.
+- [`resonate-basic-debugging-go`](resonate-basic-debugging-go/SKILL.md) — Go-specific failure modes: the `localnet` + `NoopHeartbeat{}` requirement, `ctx.Run`'s unchecked `any` leaf signatures, replay double-fires, the `Sender().PromiseSettle` base64 encoding trap (issue #28), and `r.Stop()` silently killing a live worker.
+
+**Patterns:**
+- [`resonate-saga-pattern-go`](resonate-saga-pattern-go/SKILL.md) — Distributed transactions with explicit `(T, error)` returns, a tracked `completed` slice, and reverse-order compensation dispatched via `type Step string` + `switch`.
+- [`resonate-recursive-fan-out-pattern-go`](resonate-recursive-fan-out-pattern-go/SKILL.md) — Parallel execution via the dispatch-all-then-await-all `[]*resonate.Future` pattern; recursive `ctx.RPC` self-dispatch; worker-group separation.
+- [`resonate-human-in-the-loop-pattern-go`](resonate-human-in-the-loop-pattern-go/SKILL.md) — Workflow steps that park on `ctx.Promise()` until an external actor settles via the CLI, the server HTTP API, or the low-level `Sender().PromiseSettle` — Go has **no** `promises` sub-client (issue #28).
+- [`resonate-external-system-of-record-pattern-go`](resonate-external-system-of-record-pattern-go/SKILL.md) — Coordinate writes to an external SoR by wrapping every interaction in its own idempotent `ctx.Run`; idempotency keys derived from `ctx.ID()`.
+- [`resonate-durable-sleep-scheduled-work-go`](resonate-durable-sleep-scheduled-work-go/SKILL.md) — `ctx.Sleep(time.Duration)` for in-workflow durable sleep, countdowns, and long-horizon delays. Go has **no** top-level `Schedule` API yet; recurring work uses in-workflow `ctx.Sleep` loops or external cron → `RPC`.
+
+**Not yet written for Go:** HTTP service design, token-authentication, and deployment skills. The Go SDK can drive `net/http` services today (see `example-node-drain-orchestrator-go`), but the dedicated skill waits on a stable API surface; deployment skills track validated paths. Two SDK surfaces are also absent at pre-release — a top-level `Schedule` API and a `promises` sub-client (issue #28) — and the relevant skills note the workarounds rather than inventing the API.
+
 ## Using these skills
 
 ### With Claude Code
@@ -142,7 +161,7 @@ Skills are plain Markdown. Any agent framework that supports prompt injection or
 Decision tree:
 
 1. **Is it a concept, mental model, or framework-agnostic principle that applies equally across every Resonate SDK?** → **Foundational.** No SDK suffix. Describe the idea in language-agnostic terms and link to per-SDK skills for concrete syntax.
-2. **Is it idiomatic usage of a specific SDK's API?** → **Per-SDK.** Suffix the directory name and frontmatter `name` with the SDK: `-typescript`, `-python`, or `-rust`.
+2. **Is it idiomatic usage of a specific SDK's API?** → **Per-SDK.** Suffix the directory name and frontmatter `name` with the SDK: `-typescript`, `-python`, `-rust`, or `-go`.
 3. **Is it operational or deployment knowledge?** → **Per-SDK** if the SDK shapes the deployment (e.g. Cloud Functions runtime, worker registration). **Foundational** if the operation is truly language-independent (e.g. installing the Resonate server binary).
 
 **Default to per-SDK.** Promote a skill to foundational only when it contains no SDK-specific APIs, syntax, or runtime idioms. Debug skills, for example, are per-SDK: error codes, replay tells, and diagnostic tooling differ enough across SDKs that a single unified debug skill would either read as abstract or balloon past an agent's working context. The concept of replay and durability lives in `durable-execution`; the SDK-specific tells live in each SDK's debug and advanced-reasoning skills.
@@ -159,7 +178,7 @@ When a pattern translates across SDKs (e.g. saga with compensation), each SDK ge
 
 ### Submitting a skill
 
-1. Create `your-skill-name[-typescript|-python|-rust]/SKILL.md` with the frontmatter block.
+1. Create `your-skill-name[-typescript|-python|-rust|-go]/SKILL.md` with the frontmatter block.
 2. Keep the `description` specific — it's what agents use to decide when to load the skill.
 3. Put example snippets inline; put long-form references under `your-skill-name/references/`.
 4. Keep prose tight: skills are read by LLMs with finite context.

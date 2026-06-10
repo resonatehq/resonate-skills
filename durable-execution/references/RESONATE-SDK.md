@@ -2,6 +2,8 @@
 
 TypeScript SDK for the Resonate wire protocol. Zero external dependencies.
 
+> **This is the TypeScript SDK reference** (`@resonatehq/sdk` v0.10.2). Python, Rust, and Go users: see the per-SDK skills (`resonate-basic-ephemeral-world-usage-{python,rust,go}` and `resonate-basic-durable-world-usage-{python,rust,go}`) for idiomatic syntax in your language.
+
 **Package:** `@resonatehq/sdk`
 **Exports:** `Resonate`, `Context`, `Descriptor` (types)
 
@@ -311,7 +313,7 @@ These are SDK limitations, not protocol limitations. The Resonate server support
 | `ctx.run(asyncFn)` | `ctx.run(function* gen)` | Generators only, no async |
 | `ctx.beginRun()` | `ctx.rpc()` | Fan-out via parallel workers |
 | `ctx.promise({})` auto-ID | `ctx.promise("explicit-id")` | Explicit IDs required |
-| `resonate.promises.resolve()` | `resonate.promises.settle(id, "resolved", { data })` | Single method with `state` discriminator (`resolved` / `rejected` / `rejected_canceled`) in `@resonatehq/sdk` v0.10.0 |
+| `resonate.promises.resolve()` | `resonate.promises.resolve(id, { data })` / `.reject(id, { data })` / `.cancel(id)` | The v0.10.0 single-method `.settle()` was split into three methods in v0.10.1; `.settle()` is now private. Current SDK is v0.10.2. |
 | `resonate.rpc()` | `resonate.invoke()` or direct `promise.create` | Different dispatch API |
 | `UPPERCASE` states | `lowercase` states | `RESOLVED` → `resolved` |
 | `timeout`, `createdOn` | `timeoutAt`, `createdAt` | Field renames |

@@ -5,7 +5,8 @@ description: >-
   and the tradeoffs between rolling your own (just your DB) versus using a
   framework like Resonate. Read this BEFORE picking an implementation. For the
   Resonate SDK's concrete Context API (ctx.run, ctx.sleep, ctx.promise,
-  structured concurrency), use resonate-basic-durable-world-usage-typescript.
+  structured concurrency), use the per-SDK skill for your language —
+  resonate-basic-durable-world-usage-{typescript,python,rust,go}.
 license: Apache-2.0
 ---
 
@@ -74,7 +75,7 @@ Does your workflow need...
 | **Serverless** | Yes (any runtime) | Yes (Lambda, Edge Functions) | No (requires always-on cluster) |
 | **Setup time** | Minutes | 5 minutes | Hours to days |
 | **Patterns** | Checkpoint, idempotency, outbox | All 5 patterns + distributed coordination | All patterns + enterprise features |
-| **Learning curve** | Low (just SQL + your code) | Low (generator functions) | High (proprietary DSL + concepts) |
+| **Learning curve** | Low (just SQL + your code) | Low (sequential code — generators in TS/Py, async/await in Rust/Go) | High (proprietary DSL + concepts) |
 | **When it fits** | Single-service, sequential workflows | Multi-service, any complexity | Large teams with dedicated infra staff |
 
 ---
@@ -141,9 +142,11 @@ for (const msg of pending) {
 
 ## With Resonate — Durable Execution Platform
 
-Resonate is a single-binary server (Bun + SQLite, zero external deps) paired with a tiny SDK. Runs anywhere — VPS, serverless, edge functions. Costs ~$5/mo on a small VPS.
+Resonate's open-source server is a single binary (Rust + SQLite, zero external deps) paired with a tiny SDK. Runs anywhere — VPS, serverless, edge functions. Costs ~$5/mo on a small VPS.
 
-Your code is a generator function. Each `yield` is a durable checkpoint. If the process crashes, the server re-dispatches the work to any available worker, which replays from the last checkpoint.
+Your code is an ordinary function with durable steps — a generator in TypeScript/Python, an `async fn`/func in Rust/Go. Each durable step (`yield*`/`yield`, `.await`, `Future.Await`) is a checkpoint. If the process crashes, the server re-dispatches the work to any available worker, which replays from the last checkpoint.
+
+> **Language note.** The examples below (and in this skill's references) are shown in **TypeScript**. The concepts are identical across all four Resonate SDKs; only the syntax differs. For concrete, idiomatic syntax in your language, see the per-SDK skills — `resonate-basic-durable-world-usage-{typescript,python,rust,go}` for the Context API, and the matching `resonate-saga-pattern-*` / `resonate-recursive-fan-out-pattern-*` / `resonate-human-in-the-loop-pattern-*` / `resonate-durable-sleep-scheduled-work-*` skills for the patterns shown here.
 
 ```typescript
 import { Resonate, type Context } from "@resonatehq/sdk";
@@ -335,14 +338,16 @@ The lowest-cost durable execution is the one that runs on what you already have.
 ## Anti-Patterns
 
 - **Making everything durable** — Not every function needs crash recovery. Only durabilize the critical path. The rest can use simple retries.
-- **Ignoring replay semantics** — Code that works on first run but breaks on replay: random IDs, `Date.now()` in control flow, external reads that return different values. Wrap non-deterministic operations as durable steps.
+- **Ignoring replay semantics** — Code that works on first run but breaks on replay: random IDs, reading the wall clock in control flow (`Date.now()` in TS, `time.time()` in Python, `Instant::now()` in Rust, `time.Now()` in Go), external reads that return different values. Wrap non-deterministic operations as durable steps.
 - **Treating it as a queue** — Durable execution is not a task queue. If you just need "retry this job," use a queue. Durable execution is for multi-step workflows with state.
 - **Skipping idempotency on external calls** — Durable execution guarantees at-least-once execution of each step. Without idempotency keys on external APIs, you get duplicate charges, emails, and API calls.
 - **Over-abstracting early** — Pick one pattern (usually saga or checkpoint), prove it works in your codebase, then expand. Don't build a generic workflow engine before you have a concrete use case.
 
 ---
 
-## Quick Reference — Resonate Context API
+## Quick Reference — Resonate Context API (TypeScript syntax)
+
+The shapes below are TypeScript. Python uses bare `yield`, Rust marks the function `#[resonate::function]` and writes `ctx.run(...).await?`, Go uses `ctx.Run(...)` then `f.Await(&out)`. See `resonate-basic-durable-world-usage-{typescript,python,rust,go}` for each. Durations are milliseconds in TypeScript, seconds in Python, and native `Duration` in Rust/Go.
 
 | Method | Purpose | Example |
 |--------|---------|---------|

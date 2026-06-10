@@ -38,10 +38,9 @@ sudo ./deploy-resonate.sh
 openssl genrsa -out private_key.pem 2048
 openssl rsa -in private_key.pem -pubout -out public_key.pem
 
-# Deploy with configuration
-sudo RESONATE_API_URL=https://resonate.example.com \
-     RESONATE_AUTH_ENABLED=true \
-     RESONATE_PUBLIC_KEY=/path/to/public_key.pem \
+# Deploy with configuration (setting the public key enables JWT auth)
+sudo RESONATE_SERVER__URL=https://resonate.example.com \
+     RESONATE_AUTH__PUBLICKEY=/path/to/public_key.pem \
      ./deploy-resonate.sh
 ```
 
@@ -49,11 +48,10 @@ sudo RESONATE_API_URL=https://resonate.example.com \
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `RESONATE_VERSION` | v0.8.2 | Server version to install |
-| `RESONATE_PORT` | 8001 | HTTP API port |
-| `RESONATE_API_URL` | (none) | Public URL for the server (e.g., `https://resonate.example.com`) |
-| `RESONATE_AUTH_ENABLED` | false | Enable JWT authentication |
-| `RESONATE_PUBLIC_KEY` | (none) | Path to JWT public key file (required if auth enabled) |
+| `RESONATE_VERSION` | v0.9.8 | Server version the install script downloads |
+| `RESONATE_SERVER__PORT` | 8001 | HTTP API port |
+| `RESONATE_SERVER__URL` | (none) | Public URL for the server (e.g., `https://resonate.example.com`) |
+| `RESONATE_AUTH__PUBLICKEY` | (none) | Path to JWT public key file; **setting it enables JWT auth** (there is no separate enable flag) |
 
 ## Server Flags Reference
 
@@ -204,13 +202,14 @@ jwt encode --secret @private_key.pem -A RS256 --exp='+30 days' '{"prefix":""}'
 # Copy public key to server
 scp public_key.pem root@server:/etc/resonate/
 
-# Update service
-sudo RESONATE_AUTH_ENABLED=true \
-     RESONATE_PUBLIC_KEY=/etc/resonate/public_key.pem \
+# Update service (public key present → JWT auth on)
+sudo RESONATE_AUTH__PUBLICKEY=/etc/resonate/public_key.pem \
      ./deploy-resonate.sh --update-service
 ```
 
 ### 5. Configure Clients
+
+Pass the server URL and a JWT token to the client. **TypeScript shown** — every SDK takes a URL + token the same way; see the per-SDK skill (`resonate-basic-ephemeral-world-usage-{typescript,python,rust,go}`) for client init in your language. The `RESONATE_TOKEN` env var and the `Authorization: Bearer <jwt>` header are identical across all SDKs.
 
 ```typescript
 // SDK client
@@ -321,7 +320,7 @@ curl http://localhost:8001/promises
 
 **Causes & Fixes:**
 
-1. **Auth enabled on server but client has no token**
+1. **Auth enabled on server but client has no token** — add a token to the client (TypeScript shown; every SDK takes a token the same way — see the per-SDK skills)
    ```typescript
    // Add token to client
    const resonate = new Resonate({
@@ -332,8 +331,8 @@ curl http://localhost:8001/promises
 
 2. **Token is expired**
    ```bash
-   # Generate new token
-   jwt encode --secret @private_key.pem -A RS256 --exp='+30 days' '{}'
+   # Generate new token (a payload with no prefix/role claim is DENIED — include one)
+   jwt encode --secret @private_key.pem -A RS256 --exp='+30 days' '{"prefix":""}'
    ```
 
 3. **Wrong public key on server**

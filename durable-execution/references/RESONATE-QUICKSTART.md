@@ -1,23 +1,36 @@
 # Resonate Quickstart — Zero to Running in 5 Minutes
 
-Resonate = single-binary server (Go + SQLite) + tiny SDK (TypeScript, zero deps). This gets you from nothing to a running durable workflow.
+The open-source Resonate server (`resonatehq/resonate`) is a single-binary Rust + SQLite server, paired with a tiny SDK (TypeScript, zero deps). This gets you from nothing to a running durable workflow.
 
 ---
 
 ## Prerequisites
 
-- [Go](https://go.dev) 1.21+ or download the pre-built binary from GitHub releases
+- The Resonate server prebuilt binary (macOS: `brew install resonatehq/tap/resonate`; other platforms: download from GitHub releases)
 - That's it. No Docker, no Postgres, no Redis.
 
 ---
 
 ## 1. Start the Server
 
+Install the server (macOS):
+```bash
+brew install resonatehq/tap/resonate
+```
+
+Or download the prebuilt binary for your platform from [GitHub releases](https://github.com/resonatehq/resonate/releases) (v0.9.8+).
+
+If you want to build from source (requires the Rust toolchain):
 ```bash
 git clone https://github.com/resonatehq/resonate.git
 cd resonate
-go build -o resonate-server .
-./resonate-server
+cargo build --release
+./target/release/resonate serve
+```
+
+Start the server (if installed via brew or prebuilt binary):
+```bash
+resonate serve
 ```
 
 Server starts on port 8001. SQLite database created at `./resonate.db`. Zero configuration needed.
@@ -28,6 +41,8 @@ curl -s http://localhost:9090/metrics | head -5
 ```
 
 ---
+
+> **Language note.** Code examples here are shown in **TypeScript**. The durable-execution concepts are identical across all four Resonate SDKs — only the syntax differs (Python uses bare `yield`, Rust uses `async fn` + `.await`, Go uses ordinary funcs + `Future.Await`). For concrete, idiomatic syntax in your language, see the per-SDK skills: `resonate-basic-durable-world-usage-{typescript,python,rust,go}` (and the matching pattern/debugging skills).
 
 ## 2. Write Your First Worker
 
@@ -111,13 +126,13 @@ Every workflow, every step, every timer creates a **durable promise** on the ser
 - A **state** (`pending` → `resolved` or `rejected`)
 - A **value** (the result or error, persisted in SQLite)
 
-### Generators Are the Magic
+### How Replay Works
 
-Your workflow is a generator function (`function*`). Each `yield` yields a **descriptor** to the engine. The engine:
+Each durable step hands a **descriptor** to the engine. The engine:
 - On first run: executes the step, stores the result as a promise
 - On replay: checks if the promise exists, returns the cached result, skips the step
 
-This is why generators — they can be re-entered at any point.
+This re-entrancy is the core mechanism in every SDK. The shape that expresses it differs: in TypeScript (shown here) the workflow is a generator function (`function*`) and each step is a `yield*`; Python uses a generator with bare `yield`; Rust/Go use an `async fn`/func that awaits each step.
 
 ### Worker Groups
 
@@ -199,12 +214,20 @@ All via environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESONATE_PORT` | `8001` | Protocol endpoint |
-| `RESONATE_HOST` | `0.0.0.0` | Bind address |
-| `RESONATE_DB_PATH` | `./resonate.db` | SQLite file path |
-| `RESONATE_METRICS_PORT` | `9090` | Prometheus metrics |
-| `RESONATE_AUTH_PUBLIC_KEY` | _(none)_ | RS256 public key for JWT auth |
-| `RESONATE_TICK_INTERVAL_MS` | `1000` | Background processing interval |
+| `RESONATE_SERVER__HOST` | `localhost` | HTTP server host |
+| `RESONATE_SERVER__PORT` | `8001` | HTTP API port |
+| `RESONATE_SERVER__BIND` | `0.0.0.0` | Bind address |
+| `RESONATE_SERVER__URL` | `http://{host}:{port}` | Externally-reachable URL (required for distributed deployments) |
+| `RESONATE_LEVEL` | `info` | Log level: `debug`/`info`/`warn`/`error` |
+| `RESONATE_STORAGE__TYPE` | `sqlite` | `sqlite` / `postgres` / `mysql` |
+| `RESONATE_STORAGE__SQLITE__PATH` | `resonate.db` | SQLite file path |
+| `RESONATE_STORAGE__POSTGRES__URL` | — | Postgres connection string |
+| `RESONATE_AUTH__PUBLICKEY` | _(disabled)_ | Path to RS256 PEM public key for JWT auth |
+| `RESONATE_TASKS__LEASE_TIMEOUT` | `15000` | Task lease timeout (ms) |
+| `RESONATE_TASKS__RETRY_TIMEOUT` | `30000` | Suspend/wake retry interval (ms) |
+| `RESONATE_OBSERVABILITY__METRICS_PORT` | `9090` | Prometheus metrics port (`0` disables) |
+
+Run `resonate serve --help` for the full, authoritative flag list.
 
 ---
 

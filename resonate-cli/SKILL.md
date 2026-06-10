@@ -101,7 +101,7 @@ Common flags (full set: `resonate dev --help`):
 ### `resonate serve` — production server
 
 ```shell
-export RESONATE_STORAGE_POSTGRES_URL="$DATABASE_URL"   # e.g. postgres://<user>:<password>@<host>:5432/resonate
+export RESONATE_STORAGE__POSTGRES__URL="$DATABASE_URL"   # e.g. postgres://<user>:<password>@<host>:5432/resonate
 resonate serve --storage-type postgres
 ```
 
@@ -314,7 +314,7 @@ For `resonate serve` and `resonate dev`, configuration loads in this order — e
 
 1. **Defaults** — what `--help` shows.
 2. **`resonate.toml`** — if present, picked up from the working directory.
-3. **`RESONATE_*` environment variables** — every CLI flag has an env-var equivalent. `--storage-postgres-url` ⇄ `RESONATE_STORAGE_POSTGRES_URL`. Dashes become underscores; double-dashes become the leading `RESONATE_`.
+3. **`RESONATE_*` environment variables** — every CLI flag has an env-var equivalent. The leading `--` becomes the `RESONATE_` prefix; nested config segments are joined by a **double underscore** `__` (a multi-word leaf key keeps a single `_`). E.g. `--storage-postgres-url` ⇄ `RESONATE_STORAGE__POSTGRES__URL`, `--server-url` ⇄ `RESONATE_SERVER__URL`, `--auth-publickey` ⇄ `RESONATE_AUTH__PUBLICKEY`, `--tasks-retry-timeout` ⇄ `RESONATE_TASKS__RETRY_TIMEOUT`. Run `resonate serve --help` for exact names.
 4. **CLI flags** — highest precedence.
 
 Example `resonate.toml`:

@@ -29,7 +29,7 @@ Score 1–5 on each dimension:
 
 | Dimension | 1 (low) | 5 (high) |
 |-----------|---------|----------|
-| **Failure cost** | Retry is cheap, no side effects | Retry causes duplicates, data loss, or revenue loss |
+| **Failure cost** | Retry is inexpensive, no side effects | Retry causes duplicates, data loss, or revenue loss |
 | **Duration** | Milliseconds, single request | Hours/days/weeks, spans process lifetimes |
 | **Coordination** | Single service, single step | Multiple services, human gates, external callbacks |
 | **State complexity** | Stateless or simple key-value | Branching workflows, conditional logic, fan-out/fan-in |
@@ -316,7 +316,7 @@ Durable execution has a reputation for being expensive and complex. It doesn't h
 | **Temporal Cloud** | ~$520+ | Managed cluster |
 | **AWS Step Functions** | ~$250 (standard) | AWS-locked |
 
-**Why Resonate is cheap:**
+**Why Resonate is cost-efficient:**
 - Single binary, zero external dependencies — no Redis, no Kafka, no Kubernetes
 - SQLite for storage — no database server to run or pay for
 - Tiny SDK (~1300 lines, zero deps) — minimal memory footprint
@@ -328,7 +328,7 @@ Durable execution has a reputation for being expensive and complex. It doesn't h
 - No additional processes, services, or infrastructure
 - The "framework" is 50-80 lines of code in your app
 
-The cheapest durable execution is the one that runs on what you already have.
+The lowest-cost durable execution is the one that runs on what you already have.
 
 ---
 

@@ -82,7 +82,7 @@ async fn send_complete(name: String) -> Result<()> { Ok(()) }
 
 The `ctx.run(send_tick, ...)` is durable; the subsequent `ctx.sleep(...)` is durable. A crash during the minute-long pause resumes mid-loop on restart.
 
-### Long-horizon sleeps are cheap
+### Long-horizon sleeps are inexpensive
 
 ```rust
 #[resonate::function]

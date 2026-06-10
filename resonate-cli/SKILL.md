@@ -265,7 +265,7 @@ resonate invoke daily-report --func runReport --arg '{}' --target poll://any@rep
 resonate invoke recheck-cdn --func ping --arg '"edge-1"' --delay 5m
 ```
 
-**Default target.** `poll://any@default` routes to any worker polling the `default` group. If your worker polls a non-default group, override with `--target poll://any@<group>` or the invoke sits pending forever. The same trap bites `ctx.detached()` in the TypeScript SDK — both call into the same routing layer.
+**Default target.** `poll://any@default` routes to any worker polling the `default` group. If your worker polls a non-default group, override with `--target poll://any@<group>` or the invoke sits pending forever. The same trap bites `ctx.detached()` / `ctx.Detached()` in the TypeScript and Go SDKs — both call into the same routing layer.
 
 ## `resonate tree`
 

@@ -2,7 +2,7 @@
 
 Six patterns with complete Resonate SDK code. Each pattern is self-contained — copy and adapt.
 
-**Prerequisites:** Resonate server running on port 8001, `@resonatehq/sdk` installed. See `RESONATE-QUICKSTART.md`.
+**Prerequisites (TypeScript):** Resonate server running on port 8001, `@resonatehq/sdk` installed. See `RESONATE-QUICKSTART.md`. (For Python/Rust/Go, install that SDK instead — see the per-SDK skills.)
 
 > **Language note.** Code examples here are shown in **TypeScript**. The durable-execution concepts are identical across all four Resonate SDKs — only the syntax differs (Python uses bare `yield`, Rust uses `async fn` + `.await`, Go uses ordinary funcs + `Future.Await`). For concrete, idiomatic syntax in your language, see the per-SDK skills: `resonate-basic-durable-world-usage-{typescript,python,rust,go}` (and the matching pattern/debugging skills).
 

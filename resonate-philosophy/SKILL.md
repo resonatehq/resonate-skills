@@ -206,6 +206,8 @@ Only add complexity when you have a **concrete, present need**:
 | Need to call a different service | `ctx.rpc()` |
 | Need to wait for a specific time | `ctx.sleep()` |
 
+Method names are shown in TypeScript/Python casing; Go uses PascalCase (`ctx.Promise`, `ctx.RPC`, `ctx.Sleep`, `ctx.Run`).
+
 ## Summary: The Resonate Mindset
 
 1. **Write sequential code** - Just describe what should happen, step by step

@@ -2,7 +2,7 @@
 
 Five-step triage for when things go wrong.
 
-> **Language note.** The symptoms and fixes here are written against the **TypeScript** SDK (generator functions, `yield*`). The *categories* of failure (non-determinism, missing checkpoints, wrong function shape) are universal, but the concrete tells differ per SDK — Python uses bare `yield`, Rust/Go use `async`/`Await` and will not show generator-specific errors. For language-specific debugging, see `resonate-basic-debugging-{typescript,python,rust,go}`.
+> **Language note.** The symptoms and fixes here are written against the **TypeScript** SDK (generator functions, `yield*`). The *categories* of failure (non-determinism, missing checkpoints, wrong function shape) are universal, but the concrete tells differ per SDK — Python uses bare `yield`, Rust uses `async fn` + `.await`, Go uses ordinary funcs + `Future.Await`, and none of those will show generator-specific errors. For language-specific debugging, see `resonate-basic-debugging-{typescript,python,rust,go}`.
 
 ---
 

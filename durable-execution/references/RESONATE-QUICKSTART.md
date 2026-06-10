@@ -1,6 +1,6 @@
 # Resonate Quickstart — Zero to Running in 5 Minutes
 
-The open-source Resonate server (`resonatehq/resonate`) is a single-binary Rust + SQLite server, paired with a tiny SDK (TypeScript, zero deps). This gets you from nothing to a running durable workflow.
+The open-source Resonate server (`resonatehq/resonate`) is a single-binary Rust + SQLite server, with tiny SDKs for TypeScript, Python, Rust, and Go. This quickstart uses the **TypeScript** SDK; for your language, follow the same steps with `resonate-basic-durable-world-usage-{typescript,python,rust,go}`. This gets you from nothing to a running durable workflow.
 
 ---
 

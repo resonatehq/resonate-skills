@@ -17,7 +17,7 @@ For the language-agnostic mental model, see `resonate-saga-pattern-typescript`.
 ## When to use
 
 - Multi-step workflow where intermediate state is visible to other systems
-- Each step is idempotent or cheap to retry individually
+- Each step is idempotent or inexpensive to retry individually
 - Compensation logic exists for every committed step
 - You need "all or nothing" consistency without a distributed transaction
 

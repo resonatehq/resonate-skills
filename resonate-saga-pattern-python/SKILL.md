@@ -15,7 +15,7 @@ For the TS version's mental model, see `resonate-saga-pattern-typescript`. The P
 ## When to use
 
 - Multi-step workflow where intermediate state is visible to other consumers (charge a card → create shipment)
-- Each step is idempotent or cheap to retry individually
+- Each step is idempotent or inexpensive to retry individually
 - Compensation logic exists for every committed step
 - You need "all or nothing" consistency without a distributed transaction
 

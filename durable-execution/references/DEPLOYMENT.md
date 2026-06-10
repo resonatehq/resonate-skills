@@ -36,7 +36,7 @@ That's it. No database server, no message broker, no cluster.
 
 ## Option 1: VPS with systemd (~$5/mo)
 
-The cheapest production deployment. A $5/mo VPS (Hetzner, DigitalOcean, Linode) handles substantial workloads.
+The lowest-cost production deployment. A $5/mo VPS (Hetzner, DigitalOcean, Linode) handles substantial workloads.
 
 ```bash
 # Clone and build
@@ -280,7 +280,7 @@ For streaming backups to S3, consider [Litestream](https://litestream.io/).
 | **AWS Step Functions** | ~$250 | AWS-locked |
 | **Baked-in (your DB)** | $0 incremental | Your existing database |
 
-Resonate is 3-100x cheaper than managed alternatives because it has zero external dependencies. No Redis, no Kafka, no Kubernetes operator.
+Resonate costs 3-100x less than managed alternatives because it has zero external dependencies. No Redis, no Kafka, no Kubernetes operator.
 
 ---
 

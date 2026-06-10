@@ -183,7 +183,7 @@ If the canonical page itself is missing a value an agent needs, that is a gap in
 
 ## Verifying the answer
 
-Two cheap checks before you cite a number:
+Two quick checks before you cite a number:
 
 1. **Unit check.** If the SDK is Python and the number is in milliseconds, you are wrong. If the SDK is TypeScript and the number is in seconds, you are wrong (Rust `Duration` is the only place this gets nuanced).
 2. **Asymmetry check.** Before generalising a TS default to Python or Rust, re-read the asymmetries section above. Most cross-SDK questions have at least one trap.

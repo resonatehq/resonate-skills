@@ -7,7 +7,7 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 ## What's in this repo today
 
 - **7 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, the CLI reference, the cross-SDK defaults reference, and the `resonate-bash` MCP tool guide that apply across every Resonate SDK.
-- **16 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
+- **15 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
 - **8 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) + HTTP service design for the Python SDK.
 - **8 Rust** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the early-development Rust SDK (v0.1.0, not yet on crates.io); every Rust skill carries an explicit v0.1.0 caveat.
 - **8 Go** per-SDK skills — basic usage (ephemeral + durable) + debugging + patterns (saga, recursive fan-out, durable-sleep, human-in-the-loop, external system of record) for the pre-release Go SDK (no semver tag yet; install `@latest` or pin a commit); every Go skill carries a pre-release caveat and notes the two surfaces the Go SDK does not yet expose — a top-level `Schedule` API and a `promises` sub-client.
@@ -178,7 +178,7 @@ When a pattern translates across SDKs (e.g. saga with compensation), each SDK ge
 
 ### Submitting a skill
 
-1. Create `your-skill-name[-typescript|-python|-rust]/SKILL.md` with the frontmatter block.
+1. Create `your-skill-name[-typescript|-python|-rust|-go]/SKILL.md` with the frontmatter block.
 2. Keep the `description` specific — it's what agents use to decide when to load the skill.
 3. Put example snippets inline; put long-form references under `your-skill-name/references/`.
 4. Keep prose tight: skills are read by LLMs with finite context.

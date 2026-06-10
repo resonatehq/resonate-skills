@@ -111,6 +111,18 @@ type ChargeArgs struct {
     CardToken   string `json:"card_token"`
 }
 
+type RecordArgs struct {
+    OrderID  string `json:"order_id"`
+    ChargeID string `json:"charge_id"`
+}
+
+// recordOrder writes the finalized order to the SoR. Idempotent via ON CONFLICT
+// DO NOTHING keyed on OrderID, so a replay-retry never double-records.
+func recordOrder(_ *resonate.Context, args RecordArgs) (struct{}, error) {
+    _ = args // INSERT ... ON CONFLICT (order_id) DO NOTHING
+    return struct{}{}, nil
+}
+
 // createOrder orchestrates three idempotent SoR steps.
 // Each ctx.Run is checkpointed: on replay, settled steps return their stored
 // result without touching the external system.
@@ -151,7 +163,7 @@ func createOrder(ctx *resonate.Context, args OrderArgs) (string, error) {
     }
 
     // Step 3 — record the order in the SoR DB; idempotent via ON CONFLICT DO NOTHING
-    fRecord, err := ctx.Run(recordOrder, args.OrderID, chargeID)
+    fRecord, err := ctx.Run(recordOrder, RecordArgs{OrderID: args.OrderID, ChargeID: chargeID})
     if err != nil {
         return "", err
     }

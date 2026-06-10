@@ -39,8 +39,10 @@ The external settlement path via `r.Sender().PromiseSettle` requires the value t
 
 ```go
 // WRONG — NewValue stores raw JSON; Codec.Decode fails with a base64 error.
-val := resonate.NewValue(decision)
+val, _ := resonate.NewValue(decision)
+```
 
+```go
 // CORRECT — JSON → base64 → JSON-quoted string.
 rawJSON, _ := json.Marshal(decision)
 b64 := base64.StdEncoding.EncodeToString(rawJSON)

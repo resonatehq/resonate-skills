@@ -272,23 +272,40 @@ Whenever a workflow suspends and resumes — after `ctx.Sleep`, an `ctx.RPC` awa
 **Consequence: side effects before a durable boundary run more than once.**
 
 ```go
-// WRONG — the fmt.Printf and the DB write re-run on every resume.
+// insertOrder is a leaf; db is whatever client you close over or inject.
+// WRONG — the fmt.Println and the DB write re-run on every resume.
 func badWorkflow(ctx *resonate.Context, id string) (string, error) {
     fmt.Println("starting order") // runs on every replay
     db.Insert(id)                 // inserts a duplicate row on replay!
 
-    f, _ := ctx.Sleep(1 * time.Hour)
-    f.Await(nil)
+    f, err := ctx.Sleep(1 * time.Hour)
+    if err != nil {
+        return "", err
+    }
+    if err := f.Await(nil); err != nil {
+        return "", err
+    }
     return "done", nil
 }
 
-// CORRECT — side effects wrapped in ctx.Run are checkpointed.
+// CORRECT — the side effect is wrapped in ctx.Run, so it is checkpointed:
+// on resume the settled promise short-circuits and insertOrder does not re-run.
 func goodWorkflow(ctx *resonate.Context, id string) (string, error) {
-    if _, err := ctx.Run(insertOrder, id); err != nil { // checkpointed
+    f, err := ctx.Run(insertOrder, id)
+    if err != nil {
         return "", err
     }
-    f, _ := ctx.Sleep(1 * time.Hour)
-    f.Await(nil)
+    if err := f.Await(nil); err != nil { // wait for the checkpointed write
+        return "", err
+    }
+
+    s, err := ctx.Sleep(1 * time.Hour)
+    if err != nil {
+        return "", err
+    }
+    if err := s.Await(nil); err != nil {
+        return "", err
+    }
     return "done", nil
 }
 ```

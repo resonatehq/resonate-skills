@@ -55,12 +55,14 @@ func approvalWorkflow(ctx *resonate.Context, req ReviewRequest) (string, error) 
     // Publish the promise ID inside a ctx.Run so the write is checkpointed.
     // On replay, ctx.Run re-issues with the same child promise ID and
     // short-circuits — the side-effect does not run twice.
-    _, err = ctx.Run(func(item, id string) (struct{}, error) {
+    // ctx.Run takes a single args value: ctx.Run(fn, args, opts...). Capture the
+    // values the leaf needs via the closure and pass struct{}{} as the (unused) arg.
+    _, err = ctx.Run(func(_ struct{}) (struct{}, error) {
         // In production: write to DB, push to a notification queue, etc.
-        fmt.Printf("  [workflow] awaiting approval for %q — promise ID: %s\n", item, id)
-        promiseIDs <- id // example: buffered channel to a local resolver
+        fmt.Printf("  [workflow] awaiting approval for %q — promise ID: %s\n", req.Item, promiseID)
+        promiseIDs <- promiseID // example: buffered channel to a local resolver
         return struct{}{}, nil
-    }, req.Item, promiseID)
+    }, struct{}{})
     if err != nil {
         return "", fmt.Errorf("publish promise ID: %w", err)
     }

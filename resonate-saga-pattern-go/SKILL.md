@@ -28,6 +28,7 @@ For the language-agnostic mental model — including choreography vs orchestrati
 package main
 
 import (
+    "context"
     "errors"
     "fmt"
     "log"
@@ -175,6 +176,30 @@ func createShipment(_ *resonate.Context, orderID string) (struct{}, error) {
     _ = orderID
     // Simulate a transient failure to trigger compensation.
     return struct{}{}, errors.New("shipment service unavailable")
+}
+
+func main() {
+    r, err := resonate.New(resonate.Config{URL: "http://localhost:8001"})
+    if err != nil {
+        log.Fatalf("resonate.New: %v", err)
+    }
+    defer func() { _ = r.Stop() }()
+
+    // Only the workflow needs registration; leaves reached via ctx.Run do not.
+    placeOrderFn, err := resonate.Register(r, "placeOrder", placeOrder)
+    if err != nil {
+        log.Fatalf("Register: %v", err)
+    }
+
+    h, err := placeOrderFn.Run(context.Background(), "order-1", OrderArgs{OrderID: "order-1"})
+    if err != nil {
+        log.Fatalf("Run: %v", err)
+    }
+    res, err := h.Result(context.Background())
+    if err != nil {
+        log.Fatalf("Result: %v", err)
+    }
+    fmt.Printf("saga: %+v\n", res)
 }
 ```
 

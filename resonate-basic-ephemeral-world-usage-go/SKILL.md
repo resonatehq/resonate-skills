@@ -188,7 +188,7 @@ h, err := greetFn.Run(ctx, "greet-1", GreetArgs{Name: "world"}, resonate.RunOpti
 | `Timeout` | Caps the root promise deadline. Zero uses `DefaultTopLevelTimeout` (24h). |
 | `Target` | Logical routing address (`resonate:target` tag). Empty falls back to the configured group. |
 | `Tags` | Merged into the root promise's tag set. |
-| `RetryPolicy` | Re-execution policy on error. Nil applies `DefaultRetryPolicy` (exponential, 3 attempts). |
+| `RetryPolicy` | Re-execution policy on error. Nil applies `DefaultRetryPolicy` (exponential, 3 attempts). Only takes effect when this worker wins the create-and-acquire race and runs the function locally; a task picked up by another worker via server push uses `DefaultRetryPolicy`. |
 | `Version` | Reserved — declared but not yet consumed ([issue #5](https://github.com/resonatehq/resonate-sdk-go/issues/5)). |
 
 ## `Resonate.RPC`

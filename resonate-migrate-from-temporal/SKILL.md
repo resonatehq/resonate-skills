@@ -24,9 +24,11 @@ code.
   `temporalio/samples-*` file. If you can't find it, say so.
 - **Resonate has no `@workflow`/`@activity` split.** A step is just a function
   made durable by `ctx.run`. Don't invent decorators.
-- **No official Temporal Rust samples.** Temporal's Rust SDK is in Public Preview
-  with no samples repo yet. If the target is Resonate-Rust, source from the
-  Temporal *TypeScript* idiom and say so.
+- **Temporal Rust samples live in-repo.** Temporal's Rust SDK ships examples in
+  `temporalio/sdk-rust/crates/sdk/examples/` (no separate `samples-rust` repo) —
+  source Rust migrations from there (hello_world, child_workflows, timer_examples,
+  message_passing, saga, continue_as_new, …). Only mutex and encryption have no
+  Temporal Rust example; for those, source from the Temporal *TypeScript* idiom.
 - **State coverage honestly.** A missing example ≠ impossible; it means no worked
   reference exists yet.
 - **Verify APIs against the pinned version before emitting** — the SDK surface
@@ -200,8 +202,9 @@ code.
 - Saga: no Go example (`example-saga-booking-go` / `example-money-transfer-go`).
 - Long-running loops: no Python or Rust example (`example-infinite-workflow-py` / `-rs`).
 - Distributed mutex, Encryption: TypeScript only.
-- Rust source: Temporal's Rust SDK is in Public Preview with no samples repo yet —
-  migrate Rust targets from the Temporal TypeScript idiom.
+- Rust source: Temporal Rust examples are in `temporalio/sdk-rust/crates/sdk/examples/`
+  (hello_world, child_workflows, timer_examples, message_passing, saga,
+  continue_as_new, …); only mutex and encryption have no Temporal Rust example.
 
 ## Source of truth
 

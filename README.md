@@ -6,7 +6,7 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 
 ## What's in this repo today
 
-- **8 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, the CLI reference, the cross-SDK defaults reference, the Temporal migration playbook, and the `resonate-bash` MCP tool guide that apply across every Resonate SDK.
+- **9 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, the CLI reference, the cross-SDK defaults reference, the Temporal and DBOS migration playbooks, and the `resonate-bash` MCP tool guide that apply across every Resonate SDK.
 - **15 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
 - **8 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) + HTTP service design for the Python SDK.
 - **8 Rust** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the early-development Rust SDK (v0.1.0, not yet on crates.io); every Rust skill carries an explicit v0.1.0 caveat.
@@ -40,6 +40,7 @@ Every skill falls into one of two categories.
 - [`resonate-philosophy`](resonate-philosophy/SKILL.md) — The foundational mindset. Read this first.
 - [`durable-execution`](durable-execution/SKILL.md) — The core concept and Resonate's approach.
 - [`resonate-migrate-from-temporal`](resonate-migrate-from-temporal/SKILL.md) — Coming from Temporal? Port your app pattern by pattern; maps `temporalio/samples-*` to Resonate examples across all four SDKs, with per-SDK API notes and honest coverage gaps.
+- [`resonate-migrate-from-dbos`](resonate-migrate-from-dbos/SKILL.md) — Coming from DBOS? Port your app pattern by pattern; maps `dbos-inc` examples (demo apps + the SDK repos) to Resonate equivalents across all four SDKs, with per-SDK API notes and honest coverage gaps.
 
 **Operations:**
 - [`resonate-cli`](resonate-cli/SKILL.md) — Drive the Resonate server from the shell: `serve`/`dev`, promise CRUD + search, schedules, `invoke`, `tree`, tasks, and the MCP shim. Covers every subcommand and flag as of `resonate 0.9.7`, plus the small set of docs-vs-binary deltas an agent will trip on.

@@ -87,8 +87,8 @@ Every skill falls into one of two categories.
 
 **Patterns:**
 - [`resonate-saga-pattern-python`](resonate-saga-pattern-python/SKILL.md) — Distributed transactions with compensation via `try/except` and reverse-order cleanup.
-- [`resonate-recursive-fan-out-pattern-python`](resonate-recursive-fan-out-pattern-python/SKILL.md) — Parallel execution via list-comprehension over `ctx.begin_run` / `ctx.begin_rpc`, recursion, bounded parallelism.
-- [`resonate-human-in-the-loop-pattern-python`](resonate-human-in-the-loop-pattern-python/SKILL.md) — Workflow steps that block on `ctx.promise(id=...)` until a webhook, UI, or operator resolves.
+- [`resonate-recursive-fan-out-pattern-python`](resonate-recursive-fan-out-pattern-python/SKILL.md) — Parallel execution via list-comprehension over `ctx.run` / `ctx.rpc` handles, recursion, bounded parallelism.
+- [`resonate-human-in-the-loop-pattern-python`](resonate-human-in-the-loop-pattern-python/SKILL.md) — Workflow steps that block on `ctx.promise()` until a webhook, UI, or operator resolves.
 - [`resonate-external-system-of-record-pattern-python`](resonate-external-system-of-record-pattern-python/SKILL.md) — Coordinate writes to an external SoR (Postgres, TigerBeetle, Stripe) with idempotency keys.
 
 **HTTP & service design:**

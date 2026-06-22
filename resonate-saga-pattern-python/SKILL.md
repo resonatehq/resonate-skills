@@ -8,9 +8,9 @@ license: Apache-2.0
 
 ## Overview
 
-A saga is a long-running transaction split into smaller steps, each with a compensating action. Forward steps run top-to-bottom; on failure, compensations run bottom-to-top to restore consistency. Python's native `try/except` expresses this cleanly when the durable function is a Resonate-registered generator.
+A saga is a long-running transaction split into smaller steps, each with a compensating action. Forward steps run top-to-bottom; on failure, compensations run bottom-to-top to restore consistency. Python's native `try/except` expresses this cleanly when the durable function uses `await ctx.run(...)` for each step.
 
-For the TS version's mental model, see `resonate-saga-pattern-typescript`. The Python expression differs in syntax (no generic `Generator` type annotation, `try/except` instead of `try/catch`, plain `yield` not `yield*`) and in how compensation lists are collected.
+For the TS version's mental model, see `resonate-saga-pattern-typescript`. The Python expression differs in syntax (`try/except` instead of `try/catch`, `async def` + `await` instead of `function*` + `yield`) and in how compensation lists are collected.
 
 ## When to use
 
@@ -23,56 +23,115 @@ For the TS version's mental model, see `resonate-saga-pattern-typescript`. The P
 
 ## Basic shape
 
-```py
-from resonate import Resonate
+```python
+from __future__ import annotations
+import asyncio, os, time
+from typing import TYPE_CHECKING
+from resonate.resonate import Resonate
+from resonate.retry import Never
 
-resonate = Resonate()
+if TYPE_CHECKING:
+    from resonate.context import Context
 
-@resonate.register
-def place_order(ctx, order_id: str):
-    completed: list[str] = []
+r = Resonate(url=os.environ.get("RESONATE_URL", "http://localhost:8001"), retry_policy=Never())
 
+async def place_order(ctx: Context, order_id: str) -> dict:
+    # Step 1: reserve inventory
+    flight = await ctx.run(reserve_flight, order_id)
+
+    # Step 2: charge (compensate flight on failure)
     try:
-        yield ctx.run(reserve_inventory, order_id)
-        completed.append("inventory")
+        hotel = await ctx.run(reserve_hotel, order_id)
+    except Exception:
+        await ctx.run(release_flight, flight)
+        raise
 
-        yield ctx.run(charge_payment, order_id)
-        completed.append("payment")
+    # Step 3: charge (compensate hotel + flight on failure)
+    try:
+        charge = await ctx.run(charge_card, order_id)
+    except Exception:
+        await ctx.run(release_hotel, hotel)
+        await ctx.run(release_flight, flight)
+        raise
 
-        yield ctx.run(create_shipment, order_id)
-        completed.append("shipment")
-
-        return {"status": "success", "order_id": order_id}
-
-    except Exception as err:
-        # compensate in reverse order
-        for step in reversed(completed):
-            yield ctx.run(compensate, step, order_id)
-
-        return {
-            "status": "failed",
-            "order_id": order_id,
-            "reason": str(err),
-            "compensated": completed,
-        }
-
-
-def compensate(ctx, step: str, order_id: str):
-    if step == "shipment":
-        cancel_shipment(order_id)
-    elif step == "payment":
-        refund_payment(order_id)
-    elif step == "inventory":
-        release_inventory(order_id)
+    return {"status": "success", "order_id": order_id,
+            "flight": flight, "hotel": hotel, "charge": charge}
 ```
 
-Each forward step is a checkpoint — if the worker crashes mid-saga, Resonate resumes from the last successful `yield`. Compensations run only when the `except` block is entered, so a partially-completed saga's compensations are themselves durable.
+Each forward step is a durable checkpoint — if the worker crashes mid-saga, Resonate resumes from the last successful `await ctx.run(...)`. Compensations run only when the `except` block is entered, so a partially-completed saga's compensations are themselves durable.
+
+## The canonical SDK example (trip booking)
+
+The SDK's `examples/saga` shows a three-step trip: `reserve_flight` → `reserve_hotel` → `charge_card`, with per-step compensations and a `Never()` retry policy on the top-level Resonate instance (so a step that deterministically fails doesn't spin forever):
+
+```python
+from __future__ import annotations
+import asyncio, os, time
+from typing import TYPE_CHECKING
+from resonate.resonate import Resonate
+from resonate.retry import Never
+
+if TYPE_CHECKING:
+    from resonate.context import Context
+
+class BookingError(Exception): ...
+
+async def reserve_flight(ctx: Context, customer: str, frm: str, to: str) -> str:
+    ref = f"FL-{customer}-{frm}-{to}"
+    print(f"  reserved {ref}")
+    return ref
+
+async def reserve_hotel(ctx: Context, customer: str, city: str, fail: bool) -> str:
+    if fail:
+        raise BookingError(f"no rooms available in {city}")
+    ref = f"HT-{customer}-{city}"
+    print(f"  reserved {ref}")
+    return ref
+
+async def release_flight(ctx: Context, ref: str) -> str:
+    print(f"  released {ref}")
+    return ref
+
+async def release_hotel(ctx: Context, ref: str) -> str:
+    print(f"  released {ref}")
+    return ref
+
+async def book_trip(
+    ctx: Context, customer: str, frm: str, to: str, amount: int, fail_at: str
+) -> tuple[str, str]:
+    flight = await ctx.run(reserve_flight, customer=customer, frm=frm, to=to)
+
+    try:
+        hotel = await ctx.run(
+            reserve_hotel, customer=customer, city=to, fail=fail_at == "hotel"
+        )
+    except BookingError:
+        await ctx.run(release_flight, ref=flight)
+        raise
+
+    return flight, hotel
+
+async def main() -> None:
+    r = Resonate(
+        url=os.environ.get("RESONATE_URL", "http://localhost:8001"),
+        retry_policy=Never(),
+    )
+    r.register(book_trip)
+    try:
+        handle = r.run(f"saga-{time.time_ns()}", book_trip, "alice", "SFO", "JFK", 850, "")
+        flight, hotel = await handle.result()
+        print(f"OK: flight={flight} hotel={hotel}")
+    finally:
+        await r.stop()
+
+asyncio.run(main())
+```
 
 ## Explicit step objects
 
-For sagas with many steps, an explicit list is easier to reason about than the flat `try/except`:
+For sagas with many steps, an explicit list is easier to reason about:
 
-```py
+```python
 from dataclasses import dataclass
 from typing import Callable
 
@@ -83,24 +142,23 @@ class SagaStep:
     backward: Callable
 
 STEPS = [
-    SagaStep("inventory", reserve_inventory, release_inventory),
-    SagaStep("payment", charge_payment, refund_payment),
-    SagaStep("shipment", create_shipment, cancel_shipment),
+    SagaStep("flight", reserve_flight, release_flight),
+    SagaStep("hotel", reserve_hotel, release_hotel),
+    SagaStep("charge", charge_card, refund_payment),
 ]
 
-@resonate.register
-def place_order(ctx, order_id: str):
-    completed: list[SagaStep] = []
+async def place_order(ctx: Context, order_id: str) -> dict:
+    completed: list[tuple[SagaStep, str]] = []
 
     try:
         for step in STEPS:
-            yield ctx.run(step.forward, order_id)
-            completed.append(step)
+            ref = await ctx.run(step.forward, order_id)
+            completed.append((step, ref))
         return {"status": "success", "order_id": order_id}
 
     except Exception as err:
-        for step in reversed(completed):
-            yield ctx.run(step.backward, order_id)
+        for step, ref in reversed(completed):
+            await ctx.run(step.backward, ref)
         return {"status": "failed", "order_id": order_id, "reason": str(err)}
 ```
 
@@ -108,97 +166,92 @@ def place_order(ctx, order_id: str):
 
 A compensation that fails stalls the saga in an inconsistent state. Guard against this:
 
-```py
-from resonate.retry_policies import Exponential
+```python
+from resonate.retry import Exponential
 
-@resonate.register
-def place_order(ctx, order_id: str):
-    completed: list[str] = []
+async def place_order(ctx: Context, order_id: str) -> dict:
+    completed: list[tuple[SagaStep, str]] = []
     try:
         # ... forward steps ...
+        pass
     except Exception:
-        for step in reversed(completed):
-            # aggressive retry: compensations MUST eventually succeed
-            yield ctx.run(compensate, step, order_id).options(
+        for step, ref in reversed(completed):
+            # Aggressive retry: compensations MUST eventually succeed
+            await ctx.options(
                 retry_policy=Exponential(),
-                timeout=600.0,  # 10 minutes per compensation
-            )
+            ).run(step.backward, ref)
         raise
 ```
 
-If a compensation exhausts its retry policy and still fails, you have a real inconsistency — log it, alert on-call, and resolve manually. The saga durable-function re-raises the original error so the caller sees the failure.
+If a compensation exhausts its retry policy, you have a real inconsistency — log it, alert on-call, and resolve manually.
 
 ## Distinct Python idioms
 
-- **No `yield*`** — every forward and compensation step is a plain `yield ctx.run(...)`. The generator-delegation concept from TS (`yield*`) doesn't apply in Python; `yield` is always single-value.
-- **`try/except` over `try/catch`** — catch block is `except Exception as err:` (not `catch (error)`).
-- **`reversed(completed)`** is a Python built-in that returns a reverse iterator without mutating the list. Prefer it over `completed[::-1]` (creates a copy) or `completed.reverse()` (mutates in place, which may surprise).
+- **`async def` + `await`** — durable functions are coroutines, not generators. Every step uses `await ctx.run(...)`.
+- **`try/except` over `try/catch`** — catch block is `except BookingError:` or `except Exception:`. Catch specific domain exceptions rather than bare `Exception` when you can, so internal SDK exceptions (like `SuspendedError`) are not accidentally swallowed.
+- **`reversed(completed)`** is a Python built-in that returns a reverse iterator without mutating the list.
 - **Dataclasses** (or pydantic) are the idiomatic way to model step objects, not interfaces or generics.
-- **`Exception`** catches everything; if you want narrower handling, catch specific exception types defined in your domain (`PaymentDeclined`, `InventoryUnavailable`).
 
-## Avoid: compensation that itself mutates in-flight state
+## Avoid: compensation that mutates in-flight state
 
 Bad:
 
-```py
-def refund_payment(ctx, order_id: str):
+```python
+async def refund_payment(ctx: Context, order_id: str) -> None:
     payment = PAYMENTS_DB.get(order_id)
-    payment.status = "refunded"  # ← in-memory mutation; invisible to the system
+    payment.status = "refunded"          # in-memory mutation; invisible to the system
     PAYMENTS_DB.save(payment)
 ```
 
-The in-memory `status` flip is not durable; a subsequent replay sees an inconsistent state if the DB write fails. Make the compensation a pure operation against the system of record:
+Make the compensation a pure operation against the system of record:
 
-```py
-def refund_payment(ctx, order_id: str):
-    payments_api.refund(order_id)
-    # idempotent by order_id; safe to retry
+```python
+async def refund_payment(ctx: Context, order_id: str) -> None:
+    payments_api.refund(order_id)        # idempotent by order_id; safe to retry
 ```
 
 ## Common variants
 
 ### Nested sub-saga
 
-A single step can be its own saga via RPC:
+A single step can be its own saga dispatched via rpc:
 
-```py
-@resonate.register
-def place_order(ctx, order_id: str):
+```python
+async def place_order(ctx: Context, order_id: str) -> dict:
     try:
-        yield ctx.rpc("reserve_inventory_saga", order_id)  # ← sub-saga in another worker
-        yield ctx.run(charge_payment, order_id)
-        yield ctx.run(create_shipment, order_id)
+        await ctx.rpc("reserve_inventory_saga", order_id)   # sub-saga in another worker
+        await ctx.run(charge_payment, order_id)
+        await ctx.run(create_shipment, order_id)
     except Exception:
-        # compensation logic; nested sagas compensate themselves from within their own except
-        ...
+        # Parent compensation; nested saga compensates itself internally
+        await ctx.run(cancel_order, order_id)
+        raise
 ```
-
-The sub-saga's own compensation logic runs within the sub-saga; the parent doesn't know or care.
 
 ### Parallel fan-out inside a saga
 
-```py
-@resonate.register
-def place_order(ctx, order_id: str):
+```python
+async def place_order(ctx: Context, order_id: str) -> dict:
     try:
-        yield ctx.run(reserve_inventory, order_id)
+        await ctx.run(reserve_inventory, order_id)
 
-        # kick off two independent steps in parallel
-        p1 = yield ctx.begin_run(charge_payment, order_id)
-        p2 = yield ctx.begin_run(send_confirmation_email, order_id)
-        yield p1
-        yield p2
+        # Kick off two independent steps in parallel
+        p1_future = ctx.run(charge_payment, order_id)
+        p2_future = ctx.run(send_confirmation_email, order_id)
+        await p1_future
+        await p2_future
 
-        yield ctx.run(create_shipment, order_id)
+        await ctx.run(create_shipment, order_id)
     except Exception:
-        ...
+        await ctx.run(compensate_all, order_id)
+        raise
 ```
 
-Both `charge_payment` and `send_confirmation_email` are durable; if either fails, the `except` block runs and compensations include both.
+Both `charge_payment` and `send_confirmation_email` are durable; if either fails, the `except` block runs and compensates.
 
 ## Related skills
 
-- `resonate-basic-durable-world-usage-python` — `ctx.run`, `ctx.begin_run`, options chain
+- `resonate-basic-durable-world-usage-python` — `ctx.run`, `ctx.options`, `ctx.rpc`
 - `resonate-recursive-fan-out-pattern-python` — parallel patterns inside or alongside sagas
 - `resonate-external-system-of-record-pattern-python` — when the "saga" is actually just writing to one authoritative system with idempotency
 - `durable-execution` — foundational concept; replay semantics make compensation safe

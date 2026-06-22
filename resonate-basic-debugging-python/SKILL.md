@@ -1,6 +1,6 @@
 ---
 name: resonate-basic-debugging-python
-description: Debug and troubleshoot Resonate applications using the Python SDK and Resonate Server. Use when investigating stuck workflows, non-deterministic replays, registration errors, generator mistakes, unexpected retries, or server-compat issues specific to the Python SDK's v0.6.7 legacy-server line.
+description: Debug and troubleshoot Resonate applications using the Python SDK v0.7.0 and Resonate Server v0.9.x. Use when investigating stuck workflows, non-deterministic replays, registration errors, async/await mistakes, unexpected retries, or server connectivity issues.
 license: Apache-2.0
 ---
 
@@ -8,84 +8,92 @@ license: Apache-2.0
 
 ## Overview
 
-Use this skill to diagnose Resonate runtime issues in Python. The Python SDK's failure modes are different from TypeScript's — generator-specific pitfalls, asyncio traceback shapes, server-compat caveats on v0.6.7. Focus on reproducible symptoms, promise state, registration, and determinism.
+Use this skill to diagnose Resonate runtime issues in Python. The Python SDK v0.7.0 uses `async def` + `await` (not generators); failure modes differ from TypeScript's generator-based v1 API and from the legacy v0.6.x Python SDK. Focus on reproducible symptoms, promise state, registration, and determinism.
 
 For the language-agnostic replay + recovery mental model, read `durable-execution` first.
 
 ## Triage flow
 
 1. Classify the failure: import/syntax error, runtime SDK error, server error code, workflow stuck/hanging, or unexpected replay behavior.
-2. Confirm Python is ≥ 3.12 and `resonate-sdk` is installed at the version your code expects.
-3. Check server compat: Python SDK v0.6.7 **requires the legacy Resonate server protocol**. Connecting to a v0.9.x server will appear as a long-poller that never produces messages.
-4. Confirm the worker process is running, connected to the right URL, and registered for the right group.
+2. Confirm Python is ≥ 3.12 and `resonate-sdk>=0.7.0` is installed.
+3. Confirm the Resonate server is reachable: `resonate dev` starts it on `localhost:8001` (Rust v0.9.x, single port — no separate store port).
+4. Confirm the worker process is running, connected to the right URL and group, and registered for the right functions.
 5. Inspect the promise state and call graph for the invocation ID.
-6. Validate determinism — no `time.time()`, no `random.random()`, no un-checkpointed side effects.
+6. Validate determinism — no `time.time()`, no `random.random()`, no un-checkpointed side effects in the orchestrator body.
 
 ## Version + compat pins
 
 - **Python ≥ 3.12** — the SDK uses recent typing syntax. 3.11 and below won't import.
-- **Python SDK v0.6.7** — legacy-server only. A v0.9.x-compatible Python release is on the roadmap; check release notes before upgrading the server without upgrading the SDK.
+- **`resonate-sdk>=0.7.0`** — async/await rewrite; incompatible with v0.6.x API.
+- **Resonate server v0.9.x** (Rust, single port 8001) — run with `resonate dev` for local development.
 - **`resonate-sdk` on PyPI** (not `resonate` — the bare name is a different package).
 
-If `from resonate import Resonate` fails, you either have the wrong package installed or you're on Python < 3.12.
+If `from resonate.resonate import Resonate` fails, you either have the wrong package installed or you're on Python < 3.12.
 
-## Generator pitfalls (Python-specific)
+## Async/await pitfalls (Python-specific)
 
-These are the most common Python-only footguns.
+These are the most common Python-only footguns with the v0.7.0 SDK.
 
-### Forgot `yield` before a Context call
+### Forgot `await` before a Context call
 
-```py
-@resonate.register
-def foo(ctx, arg):
-    ctx.run(bar, arg)  # ← missing yield; silently returns a promise object the SDK can't see
+```python
+async def foo(ctx: Context, arg: str) -> str:
+    ctx.run(bar, arg)   # missing await; returns a future the SDK sees but you lose the result
     return "done"
 ```
 
-The function returns immediately, no checkpoint is recorded, and `bar` may or may not have run depending on SDK internals. Fix:
+The future is tracked by structured concurrency (the runtime will still join it before settling `foo`), but the result is lost and your orchestrator continues without it. Fix:
 
-```py
-result = yield ctx.run(bar, arg)
+```python
+result = await ctx.run(bar, arg)
 ```
 
-### Used `await` instead of `yield`
+### Used `yield` instead of `await`
 
-```py
-@resonate.register
-async def foo(ctx, arg):        # ← don't make it async
-    result = await ctx.run(...) # ← Resonate Python uses yield, not await
+```python
+async def foo(ctx: Context, arg: str) -> str:
+    result = yield ctx.run(bar, arg)    # wrong — this is generator syntax
 ```
 
-Durable functions in the Python SDK are **plain generators**, not coroutines. Use `def` (not `async def`) and `yield` (not `await`). Mixing them produces a `TypeError: object cannot be used in await expression` or a silent no-op depending on where the mismatch is.
+The v0.7.0 SDK uses `async def` + `await`, not `def` + `yield`. Mixing them produces a `TypeError` or unexpected behavior. Use `await`.
 
-### `yield from` instead of `yield`
+### Made the function a plain `def` instead of `async def`
 
-```py
-@resonate.register
-def foo(ctx, arg):
-    yield from ctx.run(bar, arg)   # ← wrong; ctx.run returns a single RFC, not an iterable
+```python
+def foo(ctx: Context, arg: str) -> str:   # missing async
+    result = await ctx.run(bar, arg)       # SyntaxError
 ```
 
-`yield from` delegates to a sub-generator; Context calls are not sub-generators. Use `yield` (single value).
+All durable functions must be `async def`. The SDK registers and dispatches them as coroutines.
 
-### Function doesn't yield at all
+### Not awaiting `r.promises.*`
 
-```py
-@resonate.register
-def foo(ctx, arg):
-    return do_work(arg)       # ← no yield → not a generator → Resonate treats it as plain
+```python
+r.promises.resolve(approval_id, Value(data={"ok": True}))   # missing await
 ```
 
-If a registered function has no `yield`, Python doesn't treat the body as a generator. Resonate may accept it as a trivial pass-through, but you lose checkpointing — a crash in `do_work` restarts the whole thing.
+All `r.promises.*` methods are async. Missing `await` means the resolve is never sent. Fix:
 
-Add at least one `yield` (or wrap `do_work` as `yield ctx.run(do_work, arg)`) to make the function durable.
+```python
+await r.promises.resolve(approval_id, Value(data={"ok": True}))
+```
+
+### Not calling `await r.stop()` on shutdown
+
+The SDK needs to drain in-flight work cleanly. Always:
+
+```python
+try:
+    result = await r.run(id, fn, arg).result()
+finally:
+    await r.stop()
+```
 
 ## Registration errors
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `Function 'X' is not registered` | `rpc` target name doesn't match a registered name on any reachable worker | Check `@resonate.register` decorator is applied; ensure the calling name and registered name match (if you used `resonate.register(fn, name="custom")` the caller must use `"custom"`) |
-| `Function 'X' (version Y) is already registered` | Duplicate registration in the same process | Register once per process; if you're reloading modules in a dev loop, check hot-reload config |
+| `Function 'X' is not registered` | `rpc` target name doesn't match a registered name on any reachable worker | Check `r.register(fn)` is called; ensure the calling name and registered name match (if you used `r.register(fn, name="custom")` the caller must use `"custom"`) |
 | `Function version must be greater than zero` | Passing `version=0` explicitly | Default is 1; omit `version` or pass a positive integer |
 | `Args unencodeable` | Argument to `run`/`rpc` not JSON-serializable | Use dicts, lists, strings, numbers, bools, None, or types with custom encoders registered |
 
@@ -111,33 +119,31 @@ resonate promises search <id-prefix>
 
 Three common causes, in order of likelihood:
 
-1. **No worker for the target group.** If your `rpc` targets `poll://any@workers` but no process has registered with `group="workers"`, the invocation is queued forever. Check: `resonate promises get <id>` → state stays `pending`; check your worker process is running and connected.
-2. **Forgot `yield`** (see Generator pitfalls). The function returned before the Context call executed.
-3. **v0.6.7 SDK + v0.9.x server.** Legacy SDK can't read v0.9.x messages. Check both versions.
+1. **No worker for the target group.** If your `rpc` targets `"backend"` but no process has registered with `group="backend"`, the invocation is queued forever. Check: `resonate promises get <id>` → state stays `pending`; confirm your worker process is running and connected.
+2. **Forgot `await`** (see pitfalls above). The orchestrator advanced past a step without waiting for it.
+3. **Server not reachable.** Confirm `resonate dev` is running on port 8001; check `RESONATE_URL` env var.
 
 ## "My workflow replays things it shouldn't"
 
-Replays are normal — Resonate re-runs the durable function from the top on every resumption, using stored promise values for the yielded checkpoints. Side effects **outside** the `ctx.run` envelope re-execute on every replay.
+Replays are normal — Resonate re-executes the durable function from the top on every resumption, using stored promise values for the awaited checkpoints. Side effects **outside** the `ctx.run` envelope re-execute on every replay.
 
-```py
-@resonate.register
-def foo(ctx, arg):
-    print(f"starting {arg}")              # ← prints on every replay
-    log.info(f"starting {arg}")           # ← logs on every replay
-    result = yield ctx.run(work, arg)
+```python
+async def foo(ctx: Context, arg: str) -> str:
+    print(f"starting {arg}")              # prints on every replay
+    log.info(f"starting {arg}")           # logs on every replay
+    result = await ctx.run(work, arg)
     return result
 ```
 
 Fix: move any side effect into a helper called via `ctx.run`:
 
-```py
-def log_start(ctx, arg):
+```python
+async def log_start(ctx: Context, arg: str) -> None:
     log.info(f"starting {arg}")
 
-@resonate.register
-def foo(ctx, arg):
-    yield ctx.run(log_start, arg)         # ← logged exactly once, persisted
-    result = yield ctx.run(work, arg)
+async def foo(ctx: Context, arg: str) -> str:
+    await ctx.run(log_start, arg)         # logged exactly once, persisted
+    result = await ctx.run(work, arg)
     return result
 ```
 
@@ -145,64 +151,88 @@ def foo(ctx, arg):
 
 Common non-deterministic code that breaks recovery:
 
-```py
-@resonate.register
-def bad(ctx, x):
-    t = time.time()                       # ← changes between runs
-    r = random.random()                   # ← changes between runs
-    path = os.environ.get("FEATURE")      # ← changes if env mutates
+```python
+async def bad(ctx: Context, x: str) -> str:
+    t = time.time()                        # changes between runs
+    r = random.random()                    # changes between runs
+    path = os.environ.get("FEATURE")      # changes if env mutates
     if t > 1700000000 or r > 0.5:
-        yield ctx.run(branch_a)
-    else:
-        yield ctx.run(branch_b)
+        return await ctx.run(branch_a)
+    return await ctx.run(branch_b)
 ```
 
-Each resumption may hit a different branch than the original run, leading to contradictory checkpoints. Use the deterministic versions:
+Each resumption may hit a different branch than the original run. Wrap non-deterministic values in leaf functions via `ctx.run`:
 
-```py
-@resonate.register
-def good(ctx, x):
-    t = yield ctx.time.time()
-    r = yield ctx.random.random()
-    # env reads should happen once, at registration time, or be captured as args
+```python
+async def _get_time(ctx: Context) -> float:
+    return time.time()
+
+async def _get_random(ctx: Context) -> float:
+    return random.random()
+
+async def good(ctx: Context, x: str) -> str:
+    t = await ctx.run(_get_time)
+    r = await ctx.run(_get_random)
+    # Now t and r are stable across replays (stored at first execution)
 ```
 
 ## Minimal repro templates
 
 Worker:
 
-```py
+```python
 # worker.py
-from resonate import Resonate
+from __future__ import annotations
+import asyncio, os
+from typing import TYPE_CHECKING
+from resonate.resonate import Resonate
 
-resonate = Resonate.remote(host="localhost")
+if TYPE_CHECKING:
+    from resonate.context import Context
 
-@resonate.register
-def ping(ctx, name: str):
+r = Resonate(url=os.environ.get("RESONATE_URL", "http://localhost:8001"), group="workers")
+
+async def ping(ctx: Context, name: str) -> str:
     return f"pong {name}"
 
-if __name__ == "__main__":
-    import time
-    while True:
-        time.sleep(60)
+r.register(ping)
+
+async def main() -> None:
+    try:
+        await asyncio.Event().wait()    # block forever; SDK polls for work
+    finally:
+        await r.stop()
+
+asyncio.run(main())
 ```
 
 Client:
 
-```py
+```python
 # client.py
-from resonate import Resonate
+from __future__ import annotations
+import asyncio, os, time
+from resonate.resonate import Resonate
 
-resonate = Resonate.remote(host="localhost")
-print(resonate.rpc("ping:alice", "ping", "alice"))
+async def main() -> None:
+    r = Resonate(url=os.environ.get("RESONATE_URL", "http://localhost:8001"))
+    try:
+        result = await r.options(target="workers").rpc(
+            f"ping-{time.time_ns()}", "ping", "alice"
+        ).result()
+        print(result)
+    finally:
+        await r.stop()
+
+asyncio.run(main())
 ```
 
-If the client hangs, check: worker running? same host/port? worker in the right group? `resonate promises get ping:alice` → what state is it in?
+If the client hangs, check: worker running? same URL? worker in the right group? `resonate promises get <id>` → what state is it in?
 
 ## CLI one-liners
 
 ```shell
-# local dev server — zero config
+# local dev server — zero config, single port 8001
 resonate dev
 
 # inspect a workflow's tree of promises
@@ -212,19 +242,12 @@ resonate tree <invocation-id>
 resonate promises get <id>
 
 # resolve/reject external promises from the CLI (e.g., for HITL testing)
-resonate promises resolve <id> --data '{"approved": true}'
+resonate promises resolve <id> --data '{"approve": true}'
 resonate promises reject <id> --data '{"reason": "denied"}'
 
 # search by prefix or tags
 resonate promises search 'order:*'
 ```
-
-## What is NOT in the Python SDK yet
-
-- `ctx.panic()` / `ctx.assert()` — use standard `raise` for invariant violations
-- `.schedule()` on the Resonate class (for cron-style registration) — the `ScheduleStore` at `resonate.schedules` is available but the docs do not yet show a top-level `schedule(...)` method
-
-Don't chase these as "drift in the skill" — they're genuine SDK surface-area gaps between TS and Python, and both surface a documentation or implementation item if an agent needs them.
 
 ## Related skills
 

@@ -81,9 +81,9 @@ Every skill falls into one of two categories.
 ### Per-SDK: Python
 
 **Core SDK usage:**
-- [`resonate-basic-ephemeral-world-usage-python`](resonate-basic-ephemeral-world-usage-python/SKILL.md) — Client APIs: initialization (local vs remote), registration via `@resonate.register` decorator, top-level invocations, external promises.
-- [`resonate-basic-durable-world-usage-python`](resonate-basic-durable-world-usage-python/SKILL.md) — Context APIs inside generator-based durable functions (plain `yield`, not `yield*`), determinism rules, and Python-specific deltas from TypeScript.
-- [`resonate-basic-debugging-python`](resonate-basic-debugging-python/SKILL.md) — Python-specific failure modes: generator pitfalls, v0.6.7 legacy-server caveat, Python ≥ 3.12 pin, non-determinism regressions.
+- [`resonate-basic-ephemeral-world-usage-python`](resonate-basic-ephemeral-world-usage-python/SKILL.md) — Client APIs: initialization (`Resonate(url=...)`), registration via `r.register(fn)`, top-level invocations (`r.run`/`r.rpc`), dependencies (`r.with_dependency`), external promises.
+- [`resonate-basic-durable-world-usage-python`](resonate-basic-durable-world-usage-python/SKILL.md) — Context APIs inside `async def` durable functions (`await ctx.run/rpc/sleep/promise`), determinism rules, and Python-specific deltas from TypeScript.
+- [`resonate-basic-debugging-python`](resonate-basic-debugging-python/SKILL.md) — Python-specific failure modes: async/await pitfalls, v0.7.0 SDK + Rust server v0.9.x, Python ≥ 3.12 pin, non-determinism regressions.
 
 **Patterns:**
 - [`resonate-saga-pattern-python`](resonate-saga-pattern-python/SKILL.md) — Distributed transactions with compensation via `try/except` and reverse-order cleanup.
@@ -94,7 +94,7 @@ Every skill falls into one of two categories.
 **HTTP & service design:**
 - [`resonate-http-service-design-python`](resonate-http-service-design-python/SKILL.md) — FastAPI/Flask/Django route handlers that start or await durable workflows; worker-group separation; webhook-driven promise resolution.
 
-**Not yet available for Python:** token-based authentication (Python SDK doesn't yet support it — planned for a future release per the docs); GCP Cloud Functions / Supabase Edge deployments (no Python shim; Supabase Edge runtime is Deno-only). Durable-sleep-scheduled-work is not a separate Python skill because `ctx.sleep` is covered in basic-durable-world and the Python SDK lacks a top-level `schedule(...)` cron API.
+**Not yet available for Python:** token-based authentication (Python SDK doesn't yet support it — planned for a future release per the docs); GCP Cloud Functions / Supabase Edge deployments (no Python shim; Supabase Edge runtime is Deno-only). Durable-sleep-scheduled-work is not a separate Python skill because `ctx.sleep(timedelta(...))` is covered in basic-durable-world; a top-level `r.schedule(...)` cron API is available in v0.7.0 (see basic-ephemeral-world skill).
 
 ### Per-SDK: Rust
 
@@ -110,7 +110,7 @@ Every skill falls into one of two categories.
 - [`resonate-recursive-fan-out-pattern-rust`](resonate-recursive-fan-out-pattern-rust/SKILL.md) — Parallel execution via `.spawn().await?` double-await pattern; recursion; bounded parallelism via slice `.chunks(n)`.
 - [`resonate-human-in-the-loop-pattern-rust`](resonate-human-in-the-loop-pattern-rust/SKILL.md) — Workflow steps that block on `ctx.promise::<T>()` until a webhook, UI, or operator settles via `resonate.promises.resolve/reject/cancel`.
 - [`resonate-external-system-of-record-pattern-rust`](resonate-external-system-of-record-pattern-rust/SKILL.md) — Coordinate writes to an external SoR (Postgres, TigerBeetle, Stripe) with idempotency keys; type-dispatched DI via `ctx.get_dependency::<T>()`.
-- [`resonate-durable-sleep-scheduled-work-rust`](resonate-durable-sleep-scheduled-work-rust/SKILL.md) — `ctx.sleep(Duration)` for in-workflow durable sleep + `resonate.schedule()` cron-registered ephemeral-world scheduling (Rust has this API; Python's v0.6.7 does not).
+- [`resonate-durable-sleep-scheduled-work-rust`](resonate-durable-sleep-scheduled-work-rust/SKILL.md) — `ctx.sleep(Duration)` for in-workflow durable sleep + `resonate.schedule()` cron-registered ephemeral-world scheduling.
 
 **Docs-vs-source note:** `ctx.promise::<T>()`, `ctx.get_dependency::<T>()`, `ctx.info()`, and `resonate.with_dependency::<T>()` all exist in the v0.1.0 SDK source but are not yet covered in `docs/develop/rust.mdx`. The Rust skills above use these APIs with source-path citations; docs are expected to catch up in a future release.
 

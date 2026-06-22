@@ -1,6 +1,6 @@
 ---
 name: resonate-basic-durable-world-usage-python
-description: Core patterns for writing Resonate durable functions in Python — generator syntax with yield, Context API reference (run, begin_run, rpc, begin_rpc, detached, promise, sleep, deterministic time and random, dependency injection), and the determinism rules that make recovery work. Use when writing any function body decorated with @resonate.register.
+description: Core patterns for writing Resonate durable functions in Python — async/await syntax, Context API reference (run, rpc, detached, promise, sleep, dependency injection), and the determinism rules that make recovery work. Use when writing any function body registered with r.register().
 license: Apache-2.0
 ---
 
@@ -8,7 +8,7 @@ license: Apache-2.0
 
 ## Overview
 
-Durable functions are the payload of Resonate. They are regular Python generators — ordinary `def` functions with `yield` inside — that the SDK treats as a sequence of durable checkpoints. Every `yield` is a save point: if the process crashes, the function resumes from the last successful `yield` on another process or a restart.
+Durable functions are the payload of Resonate. They are `async def` coroutines that the SDK treats as a sequence of durable checkpoints. Every `await ctx.run(...)` or `await ctx.rpc(...)` is a save point: if the process crashes, the function resumes from the last successful checkpoint on another process or a restart.
 
 This skill covers the Context API (`ctx.*`) that you use inside those functions. The ephemeral-world counterpart (`Resonate` class, registration, top-level invocation) lives in `resonate-basic-ephemeral-world-usage-python`.
 
@@ -16,21 +16,26 @@ This skill covers the Context API (`ctx.*`) that you use inside those functions.
 
 Every durable function:
 
-1. Is registered with `@resonate.register` or `resonate.register(fn)` in the ephemeral world.
+1. Is registered with `r.register(fn)` in the ephemeral world.
 2. Takes `ctx` (the Context) as its first parameter; any other parameters after that are the invocation args.
-3. Uses `yield` — not `await`, not `yield from` — to interact with `ctx`. Each yield is a checkpoint.
+3. Uses `await` to interact with `ctx`. Each awaited `ctx.*` call is a durable checkpoint.
 4. Is deterministic when replayed: no direct `time.time()`, no `random.random()`, no raw network I/O outside `ctx.run`.
 
 Minimal shape:
 
-```py
-@resonate.register
-def process_order(ctx, order_id: str):
-    # step 1 — durable: its result is persisted
-    order = yield ctx.run(load_order, order_id)
+```python
+from __future__ import annotations
+from typing import TYPE_CHECKING
 
-    # step 2 — durable: runs on a remote worker
-    charge = yield ctx.rpc("charge_card", order)
+if TYPE_CHECKING:
+    from resonate.context import Context
+
+async def process_order(ctx: Context, order_id: str) -> dict:
+    # step 1 — durable: its result is persisted
+    order = await ctx.run(load_order, order_id)
+
+    # step 2 — durable: runs locally in the same worker
+    charge = await ctx.run(charge_card, order)
 
     # step 3 — ordinary Python control flow; free to branch, loop, raise
     if not charge["ok"]:
@@ -41,226 +46,220 @@ def process_order(ctx, order_id: str):
 
 If this function crashes after step 1 but before step 2, it resumes at step 2 on restart — `load_order` is NOT re-run. Its result is read from the promise store.
 
-## Same-process invocation: `ctx.run` and `ctx.begin_run`
+## Same-process invocation: `ctx.run`
 
-`ctx.run` invokes another function in the same process, synchronously. The durable function blocks until it returns, and the result is checkpointed.
+`ctx.run` invokes another function in the same process durably. The durable function awaits it and the result is checkpointed:
 
-```py
-@resonate.register
-def foo(ctx, arg):
-    result = yield ctx.run(bar, arg)
-    # ...
+```python
+async def foo(ctx: Context, arg: str) -> str:
+    result = await ctx.run(bar, arg)
+    return result
 
-def bar(ctx, arg):
-    # bar can be a plain function or another durable generator
+async def bar(ctx: Context, arg: str) -> str:
+    # bar can be any async def; it runs as a durable leaf
     return arg.upper()
 ```
 
-`ctx.begin_run` is the asynchronous form. It returns a promise you can yield later — useful for bounded parallelism:
+To fire off multiple children and await them in parallel, launch them before awaiting:
 
-```py
-@resonate.register
-def foo(ctx, items):
-    # kick off three in parallel
-    promises = [yield ctx.begin_run(process, item) for item in items]
-    # wait for them all
-    results = [(yield p) for p in promises]
+```python
+async def enrich_batch(ctx: Context, order_ids: list[str]) -> list[dict]:
+    # Launch all children (returns futures)
+    futures = [ctx.run(enrich_one, oid) for oid in order_ids]
+    # Await them all
+    results = [await f for f in futures]
     return results
 ```
 
-`ctx.run` is the default; reach for `ctx.begin_run` only when you need concurrency in a single function body.
+Note: unawaited `ctx.run(...)` futures are still tracked by the runtime via structured concurrency — the parent cannot settle until all spawned children complete. But explicitly awaiting them gives you the results.
 
-## Remote invocation: `ctx.rpc`, `ctx.begin_rpc`, `ctx.detached`
+## Remote invocation: `ctx.rpc` and `ctx.detached`
 
-`ctx.rpc` invokes a registered function on a remote worker process. The caller blocks until the remote returns.
+`ctx.rpc` dispatches a registered function to a remote worker process by name:
 
-```py
-@resonate.register
-def orchestrator(ctx, batch_id: str):
-    # "worker-fn" must be registered in a worker process the caller can reach
-    result = yield ctx.rpc("worker_fn", batch_id)
+```python
+async def orchestrator(ctx: Context, batch_id: str) -> dict:
+    # "worker_fn" must be registered in a reachable worker group
+    result = await ctx.rpc("worker_fn", batch_id)
     return result
 ```
 
-`ctx.begin_rpc` is the async form; it returns a promise for later awaiting. `ctx.detached` is fire-and-forget:
+`ctx.detached` is fire-and-forget — the parent does NOT wait for the result:
 
-```py
-@resonate.register
-def notify_then_work(ctx, payload):
-    yield ctx.detached("send_slack_notification", payload)
-    # the notification promise is not implicitly awaited — the orchestrator continues
-    return (yield ctx.rpc("do_the_real_work", payload))
+```python
+async def place_order(
+    ctx: Context, customer: str, sku: str, qty: int, amount: int
+) -> tuple[str, str, str]:
+    stock_ref = await ctx.run(reserve_stock, sku, qty)
+    charge_ref = await ctx.run(charge_card, customer, amount)
+
+    # Dispatch audit as a detached workflow; get back the promise id only
+    audit_future = ctx.detached(
+        "write_audit_log",
+        customer=customer,
+        sku=sku,
+        amount=amount,
+        stock_ref=stock_ref,
+        charge_ref=charge_ref,
+    )
+    audit_id = await audit_future.id()   # await the id; do NOT await the result
+    return stock_ref, charge_ref, audit_id
 ```
 
-Use `detached` when the side effect should survive independently of the parent's success.
+Use `detached` when the side effect should survive independently of the parent's success — post-commit hooks, notifications, audit logs.
 
 ## Options
 
-Options configure an individual call. For Context invocations, options **chain after** the call:
+Options configure an individual call. For Context invocations, options come first via `ctx.options(...)`:
 
-```py
-from resonate.retry_policies import Exponential, Never
+```python
+from resonate.retry import Exponential, Never
 
-@resonate.register
-def foo(ctx, arg):
-    result = yield ctx.run(bar, arg).options(
-        timeout=30.0,                   # seconds
-        retry_policy=Exponential(),     # or Constant(), Linear(), Never()
-        target="poll://any@workers",    # only meaningful for rpc / begin_rpc
-        tags={"priority": "high"},
-        idempotency_key="custom-ikey",
-        durable=True,
-        version=1,
-    )
+async def foo(ctx: Context, arg: str) -> str:
+    result = await ctx.options(
+        retry_policy=Exponential(),
+        version=2,
+    ).run(bar, arg)
     return result
 ```
 
-(Note: the ephemeral-world `resonate.options(...)` is a *prefix* chain; Context `.options(...)` is a *suffix* chain. The symmetry breaks here, but both forms accept the same option dict.)
+To target a specific worker group for `rpc`:
 
-Retry policies are importable via `from resonate.retry_policies import Exponential, Constant, Linear, Never`.
+```python
+result = await ctx.options(target="db-workers").rpc("query_orders", user_id)
+```
 
 ## External promises: `ctx.promise`
 
-`ctx.promise` creates (or retrieves) a promise the durable function can block on. The promise is resolved or rejected from outside — typically by a webhook, UI, or another process — via `resonate.promises.resolve/reject`.
+`ctx.promise` creates a durable promise the function suspends on until externally resolved. This is the primitive for human-in-the-loop workflows.
 
-```py
-@resonate.register
-def approval_flow(ctx, order_id: str):
-    # block until someone resolves this promise
-    p = yield ctx.promise(id=f"approval:{order_id}")
-    decision = yield p
+```python
+async def fulfill_order(ctx: Context, order_id: str, amount: int) -> str:
+    # Create the promise; its id is deterministic (derived from the workflow id)
+    approval = ctx.promise()
+    approval_id = await approval.id()
 
-    if decision.get("approved"):
-        yield ctx.run(fulfill, order_id)
-    else:
-        yield ctx.run(cancel, order_id)
+    # Notify whoever needs to resolve (via a leaf — side effects in leaves only)
+    await ctx.run(notify_reviewer, order_id, amount, approval_id)
+
+    # Suspend here until an external party resolves or rejects
+    decision_raw = await approval
+
+    if decision_raw.get("approve"):
+        return await ctx.run(ship_order, order_id)
+    return await ctx.run(cancel_order, order_id)
 ```
 
-Without an ID, one is generated. With an ID, the promise is idempotent — the same ID returns the same promise object, so retries don't create duplicates.
-
-You can also pass data the resolver will see:
-
-```py
-p = yield ctx.promise(data={"needs_review_by": "alice@acme.io"})
-```
-
-## Determinism: time and randomness
-
-Never call `time.time()` or `random.random()` directly in a durable function — on replay, the values change and the function branches differently than it did originally.
-
-Use the deterministic versions:
-
-```py
-@resonate.register
-def foo(ctx, arg):
-    # returns seconds-since-epoch as a float; stable across replay
-    t = yield ctx.time.time()
-
-    # returns a float in [0, 1); stable across replay
-    r = yield ctx.random.random()
-    # ...
-```
-
-These are yielded like any other Context call because their value must be persisted at the checkpoint.
+The external resolver calls `await r.promises.resolve(approval_id, Value(data=decision))` from outside the worker (a webhook handler, a CLI, a separate process).
 
 ## `ctx.sleep`
 
-`ctx.sleep` sleeps for a duration in **seconds** (float). No upper bound — sleep for days, weeks, whatever. The Resonate server holds the continuation; no process needs to stay alive.
+`ctx.sleep` suspends for a `timedelta`. The Resonate server holds the continuation; no process needs to stay alive during the sleep:
 
-```py
-@resonate.register
-def daily_digest(ctx, user_id: str):
+```python
+from datetime import timedelta
+
+async def daily_digest(ctx: Context, user_id: str) -> None:
     while True:
-        yield ctx.sleep(24 * 60 * 60)  # 24 hours
-        yield ctx.rpc("send_digest", user_id)
+        await ctx.sleep(timedelta(hours=24))
+        await ctx.rpc("send_digest", user_id)
 ```
 
-Unlike TS (which uses milliseconds), **Python uses seconds**. `ctx.sleep(5)` sleeps 5 seconds, not 5 milliseconds.
+Pass a `timedelta`, not a raw float. For fake async work inside a leaf, use `await asyncio.sleep(...)` directly instead.
 
 ## Dependencies
 
-`ctx.get_dependency(name)` retrieves a dependency set in the ephemeral world via `resonate.set_dependency(name, obj)`:
+`ctx.get_dependency(MyType)` retrieves a dependency registered via `r.with_dependency(obj)`:
 
-```py
-@resonate.register
-def write_to_db(ctx, record):
-    db = ctx.get_dependency("db")
-    # treat db like a normal resource — not yielded; dependencies are references, not checkpoints
-    yield ctx.run(_insert_row, db, record)
-```
+```python
+import psycopg
 
-Wrap the actual I/O in a helper passed to `ctx.run` so the side effect is checkpointed:
+async def write_to_db(ctx: Context, record: dict) -> None:
+    db = ctx.get_dependency(psycopg.Connection)
+    # Wrap the actual I/O in a helper via ctx.run so the side effect is checkpointed
+    await ctx.run(_insert_row, db, record)
 
-```py
-def _insert_row(ctx, db, record):
+async def _insert_row(ctx: Context, db: psycopg.Connection, record: dict) -> None:
     db.execute("INSERT INTO orders VALUES (...)", record)
 ```
 
+Never instantiate DB clients or HTTP sessions inside a durable function body — they would be recreated on every replay.
+
 ## Side effects and the `ctx.run` envelope
 
-Any side effect — HTTP call, DB write, file write, print — belongs inside a function that the durable function reaches via `ctx.run`. This ensures the effect is executed exactly once: the durable function yields, the effect runs, the result is persisted, and on replay the stored result is returned instead of re-executing the effect.
+Any side effect — HTTP call, DB write, file write, print — belongs inside a function that the durable function reaches via `ctx.run`. This ensures the effect is executed exactly once: the orchestrator awaits the checkpoint, the leaf runs, the result is persisted, and on replay the stored result is returned instead of re-executing.
 
 Bad (replays re-execute the side effect):
 
-```py
-@resonate.register
-def foo(ctx, arg):
-    requests.post(WEBHOOK_URL, json=arg)  # ← runs every replay
+```python
+async def foo(ctx: Context, arg: str) -> str:
+    requests.post(WEBHOOK_URL, json=arg)  # runs on every replay
     return "done"
 ```
 
 Good (side effect is checkpointed exactly once):
 
-```py
-def send_webhook(ctx, arg):
+```python
+async def send_webhook(ctx: Context, arg: str) -> str:
     requests.post(WEBHOOK_URL, json=arg)
     return "sent"
 
-@resonate.register
-def foo(ctx, arg):
-    yield ctx.run(send_webhook, arg)
+async def foo(ctx: Context, arg: str) -> str:
+    await ctx.run(send_webhook, arg)
     return "done"
 ```
 
-## What is NOT available in Python (vs TS)
+## Determinism: time and randomness
 
-- `ctx.panic()` / `ctx.assert()` — not implemented in the Python SDK. Use standard Python `raise` for invariant violations; Resonate treats raises from durable functions as failures and applies the retry policy.
-- `ctx.schedule(...)` (cron-style invocation registration) — currently ephemeral-world only in Python (see the `ScheduleStore` on `resonate.schedules`).
+Never call `time.time()` or `random.random()` directly in a durable function — on replay, the values change and the function branches differently. Wrap them in a leaf via `ctx.run`:
 
-These are not drift in this skill — they're real SDK-feature deltas between TS and Python that a reader should know about.
+```python
+import time, random
+
+async def _get_time(ctx: Context) -> float:
+    return time.time()
+
+async def _get_random(ctx: Context) -> float:
+    return random.random()
+
+async def foo(ctx: Context) -> None:
+    t = await ctx.run(_get_time)
+    r = await ctx.run(_get_random)
+```
+
+The leaf settles once and its value is persisted; replay returns the stored value.
 
 ## Common shapes
 
 **Sequential pipeline with retries:**
 
-```py
-@resonate.register
-def ingest(ctx, source_url: str):
-    data = yield ctx.run(fetch, source_url).options(retry_policy=Exponential())
-    parsed = yield ctx.run(parse, data)
-    yield ctx.run(persist, parsed)
+```python
+from resonate.retry import Exponential
+
+async def ingest(ctx: Context, source_url: str) -> dict:
+    data = await ctx.options(retry_policy=Exponential()).run(fetch, source_url)
+    parsed = await ctx.run(parse, data)
+    await ctx.run(persist, parsed)
     return {"count": len(parsed)}
 ```
 
 **Parallel fan-out within a single function:**
 
-```py
-@resonate.register
-def enrich_batch(ctx, ids: list[str]):
-    promises = [yield ctx.begin_rpc("enrich_one", i) for i in ids]
-    return [(yield p) for p in promises]
+```python
+async def enrich_batch(ctx: Context, ids: list[str]) -> list[dict]:
+    futures = [ctx.run(enrich_one, i) for i in ids]
+    return [await f for f in futures]
 ```
 
-**Recursive workflow (same function calls itself):**
+**Recursive workflow (dispatching itself via rpc):**
 
-```py
-@resonate.register
-def crawl(ctx, url: str, depth: int):
-    page = yield ctx.run(fetch, url)
+```python
+async def crawl(ctx: Context, url: str, depth: int) -> dict:
+    page = await ctx.run(fetch, url)
     if depth > 0:
-        for link in page.links:
-            yield ctx.detached("crawl", link, depth - 1)
-    return page.id
+        for link in page["links"]:
+            ctx.detached("crawl", link, depth - 1)
+    return {"url": url, "id": page["id"]}
 ```
 
 ## Related skills

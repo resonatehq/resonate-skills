@@ -10,7 +10,7 @@ license: Apache-2.0
 
 Recursive fan-out is when a durable function spawns child invocations (either of itself or of siblings), optionally waits for them in parallel, and possibly continues recursing. Each child is its own Resonate promise; if a worker crashes, each child resumes independently.
 
-The pattern is naturally expressed in Python as a list comprehension over `ctx.begin_run` or `ctx.begin_rpc` followed by a yield-to-await loop. This is different from TS's map-over-promises shape only in syntax; the semantics are identical.
+The pattern is expressed in Python by launching multiple `ctx.run(...)` or `ctx.rpc(...)` calls before awaiting them — collect the futures first, then `await` them. This is different from TS's map-over-promises shape only in syntax; the semantics are identical.
 
 ## When to use
 
@@ -23,75 +23,101 @@ The pattern is naturally expressed in Python as a list comprehension over `ctx.b
 
 ## Parallel fan-out in the same process
 
-Use `ctx.begin_run` to start children without blocking; collect promises; yield them to await:
+Launch children without blocking; collect futures; await them:
 
-```py
-from resonate import Resonate
+```python
+from __future__ import annotations
+import asyncio, os, time
+from typing import TYPE_CHECKING
+from resonate.resonate import Resonate
 
-resonate = Resonate()
+if TYPE_CHECKING:
+    from resonate.context import Context
 
-@resonate.register
-def enrich_batch(ctx, order_ids: list[str]):
-    # fire off N children in parallel
-    promises = [(yield ctx.begin_run(enrich_one, oid)) for oid in order_ids]
+r = Resonate(url=os.environ.get("RESONATE_URL", "http://localhost:8001"))
 
-    # await all; order preserved
-    results = [(yield p) for p in promises]
+async def enrich_batch(ctx: Context, order_ids: list[str]) -> list[dict]:
+    # Launch all children (returns futures immediately)
+    futures = [ctx.run(enrich_one, oid) for oid in order_ids]
+
+    # Await them all; order preserved
+    results = [await f for f in futures]
     return results
 
-
-def enrich_one(ctx, order_id: str):
-    # ... enrichment logic ...
+async def enrich_one(ctx: Context, order_id: str) -> dict:
+    # Enrichment logic — this is a leaf
     return {"order_id": order_id, "enriched": True}
 ```
 
-Each `enrich_one` call is an independent durable promise. If the parent worker crashes after launching children but before awaiting, the children continue; on parent replay, the `yield p` lookups hit the stored promise values.
+Each `enrich_one` call is an independent durable promise. If the parent worker crashes after launching children but before awaiting, the children continue; on parent replay, awaiting the future hits the stored promise value.
+
+Note: structured concurrency guarantees the parent cannot settle until all spawned children (even unawaited ones) complete. Explicitly awaiting them gives you the results.
 
 ## Parallel fan-out across workers
 
-Use `ctx.begin_rpc` to dispatch children to remote workers:
+Use `ctx.rpc` to dispatch children to remote workers:
 
-```py
-@resonate.register
-def parallel_enrich(ctx, order_ids: list[str]):
-    promises = [
-        (yield ctx.begin_rpc("enrich_one", oid).options(target="poll://any@enrichment-workers"))
+```python
+async def parallel_enrich(ctx: Context, order_ids: list[str]) -> list[dict]:
+    futures = [
+        ctx.options(target="enrichment-workers").rpc("enrich_one", oid)
         for oid in order_ids
     ]
-    return [(yield p) for p in promises]
+    return [await f for f in futures]
 ```
 
 This horizontally scales across any `enrichment-workers` group. Fair queueing is the Resonate server's responsibility; your code doesn't manage worker pools.
 
 ## Recursive fan-out
 
-A durable function calling itself is legal — useful for tree traversal and crawlers:
+A durable function calling itself via rpc is legal — useful for tree traversal and crawlers:
 
-```py
-@resonate.register
-def crawl(ctx, url: str, depth: int):
-    page = yield ctx.run(fetch_page, url)
+```python
+async def crawl(ctx: Context, url: str, depth: int) -> dict:
+    page = await ctx.run(fetch_page, url)
 
     if depth <= 0:
-        return {"url": url, "depth": 0, "links": page.links}
+        return {"url": url, "depth": 0, "links": page["links"]}
 
-    # fan out to each link, one depth deeper
-    promises = [
-        (yield ctx.begin_rpc("crawl", link, depth - 1))
-        for link in page.links
+    # Fan out to each link, one depth deeper — dispatched by name via server
+    futures = [
+        ctx.rpc("crawl", link, depth - 1)
+        for link in page["links"]
     ]
-    children = [(yield p) for p in promises]
+    children = [await f for f in futures]
 
-    return {"url": url, "depth": depth, "links": page.links, "children": children}
+    return {"url": url, "depth": depth, "children": children}
 ```
 
-Recursion depth is only bounded by Python's own recursion limit (about 1000 by default) and by the promise graph's storage capacity. For very deep or very wide trees, prefer `ctx.detached` (fire-and-forget) so the parent's promise tree doesn't grow unboundedly.
+For very deep or very wide trees, prefer `ctx.detached` (fire-and-forget) so the parent's promise tree doesn't grow unboundedly.
+
+## The canonical SDK example (fibonacci)
+
+The SDK's `examples/fibonacci` shows recursive fan-out in three modes — `rpc`, `run`, and `mix` — where each recursive call goes through the server or stays local:
+
+```python
+from resonate.resonate import Resonate
+
+async def fib_rpc(ctx, n: int) -> int:
+    if n <= 1:
+        return n
+    a = await ctx.rpc("fib_rpc", n - 1)
+    b = await ctx.rpc("fib_rpc", n - 2)
+    return a + b
+
+async def fib_run(ctx, n: int) -> int:
+    if n <= 1:
+        return n
+    a = await ctx.run(fib_run, n - 1)
+    b = await ctx.run(fib_run, n - 2)
+    return a + b
+```
 
 ## Bounded parallelism
 
-`begin_run` + `yield` is fully parallel. If you need at-most-K in-flight, split the input:
+Fully parallel fan-out. If you need at-most-K in-flight, batch the input:
 
-```py
+```python
 from itertools import islice
 
 def _chunks(iterable, k):
@@ -102,12 +128,11 @@ def _chunks(iterable, k):
             return
         yield batch
 
-@resonate.register
-def process_bounded(ctx, items: list[str], concurrency: int = 10):
+async def process_bounded(ctx: Context, items: list[str], concurrency: int = 10) -> list[dict]:
     results = []
     for batch in _chunks(items, concurrency):
-        promises = [(yield ctx.begin_run(process_one, item)) for item in batch]
-        results.extend([(yield p) for p in promises])
+        futures = [ctx.run(process_one, item) for item in batch]
+        results.extend([await f for f in futures])
     return results
 ```
 
@@ -115,17 +140,16 @@ Each batch of up to `concurrency` runs in parallel; the next batch only starts a
 
 ## Partial failure handling
 
-By default, if any child raises, its promise rejects and the parent's `yield p` re-raises. If you want to continue on individual failures:
+By default, if any child raises, the parent's `await f` re-raises. To continue on individual failures:
 
-```py
-@resonate.register
-def enrich_tolerant(ctx, order_ids: list[str]):
-    promises = [(yield ctx.begin_run(enrich_one, oid)) for oid in order_ids]
+```python
+async def enrich_tolerant(ctx: Context, order_ids: list[str]) -> list[dict]:
+    futures = [ctx.run(enrich_one, oid) for oid in order_ids]
 
     results = []
-    for p in promises:
+    for f in futures:
         try:
-            results.append((yield p))
+            results.append(await f)
         except Exception as err:
             results.append({"error": str(err)})
     return results
@@ -135,31 +159,29 @@ Each child's error is caught individually; the parent returns a mixed list of su
 
 ## Idempotency via stable invocation IDs
 
-Every recursive or fan-out call should use a stable invocation ID so replays don't create new invocations:
+Fan-out children get deterministic ids automatically (e.g., `{parent_id}.1`, `{parent_id}.2`). If you dispatch via `ctx.rpc` with explicit ids, keep them stable across retries:
 
-```py
-@resonate.register
-def enrich_batch(ctx, batch_id: str, order_ids: list[str]):
-    # pass the batch + item IDs so the invocation is stable across retries
-    promises = [
-        (yield ctx.begin_run(enrich_one, oid).options(id=f"enrich:{batch_id}:{oid}"))
+```python
+async def enrich_batch(ctx: Context, batch_id: str, order_ids: list[str]) -> list[dict]:
+    # rpc with explicit ids ensures replay reuses existing promises
+    futures = [
+        ctx.options(version=1).rpc(f"enrich:{batch_id}:{oid}", oid)
         for oid in order_ids
     ]
-    return [(yield p) for p in promises]
+    return [await f for f in futures]
 ```
-
-Without a stable ID, a replay creates a fresh child invocation instead of reusing the original's result.
 
 ## Distinct Python idioms
 
-- **List comprehension with `yield` inside:** `[(yield ctx.begin_run(...)) for x in items]` — Python-specific expression. TS achieves the same with `map`/`for` loops but no single-line shape.
+- **Futures launched before awaited:** `futures = [ctx.run(fn, x) for x in items]` then `[await f for f in futures]` — plain list comprehensions. No special syntax needed.
 - **`islice` from `itertools`** for bounded parallelism — cleaner than manual indexing.
-- **`try/except` per-promise** — Python's narrow scoping lets you catch one child's failure without affecting siblings, naturally.
-- **No `Promise.all` or `Promise.allSettled`** — yielding the list sequentially already gives all-or-first-error semantics; per-promise try/except gives allSettled semantics.
+- **`try/except` per-future** — Python's narrow scoping lets you catch one child's failure without affecting siblings.
+- **No `Promise.all` or `Promise.allSettled`** — `[await f for f in futures]` gives all-or-first-error semantics; per-future try/except gives allSettled semantics.
+- **Structured concurrency** — unawaited children are still joined by the runtime before the parent resolves; you don't need to track them explicitly to prevent orphans.
 
 ## Related skills
 
-- `resonate-basic-durable-world-usage-python` — `ctx.begin_run`, `ctx.begin_rpc`, `ctx.detached`, options chain
+- `resonate-basic-durable-world-usage-python` — `ctx.run`, `ctx.rpc`, `ctx.detached`, `ctx.options`
 - `resonate-saga-pattern-python` — fan-out inside a saga for parallel forward steps
 - `resonate-human-in-the-loop-pattern-python` — fan-out where each child waits for its own human approval
 - `durable-execution` — foundational replay semantics

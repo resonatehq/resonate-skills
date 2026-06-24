@@ -16,35 +16,37 @@ This skill covers the shape of that split: what runs where, how routes interact 
 
 ```
  client → HTTP routes (FastAPI/Flask)
-            → Resonate client (begin_run / rpc / promises.resolve)
+            → Resonate client (r.run / r.rpc / r.promises.resolve)
                 → worker group A (business logic)
                     → ctx.rpc → worker group B (specialized, e.g. DB)
 ```
 
 - **HTTP server:** FastAPI/Flask/Django app handling routes; maps HTTP requests to Resonate invocations
-- **Worker service:** a process (same or different host) with `@resonate.register`-ed functions; long-polls for RPC invocations
-- **Resonate server:** durable promise store + coordination hub (in-memory local mode, or remote server for multi-process)
+- **Worker service:** a process (same or different host) with `r.register(...)`-ed functions; connects to the Resonate server
+- **Resonate server:** durable promise store + coordination hub (Rust v0.9.x, single port 8001)
 
 ## Rules
 
-- **Route handlers are ephemeral.** Use Client APIs (`resonate.run`, `begin_run`, `rpc`, `begin_rpc`, `promises.*`). Never use Context APIs in a route handler.
-- **Durable functions run in workers.** Regular `def` with `yield` + `@resonate.register` decorator.
+- **Route handlers are ephemeral.** Use Client APIs (`r.run`, `r.rpc`, `r.promises.*`). Never use Context APIs in a route handler.
+- **Durable functions run in workers.** `async def` with `await ctx.run/rpc` + `r.register(fn)`.
 - **All external effects (DB, HTTP, filesystem) run inside `ctx.run` envelopes** — never at the top of a durable function, never at module import time.
-- **Stable invocation IDs.** Derive from request inputs (`order:{order_id}`) — not `uuid.uuid4()` at route-handler time unless you persist the ID in the response so the client can poll.
+- **Stable invocation IDs.** Derive from request inputs (`f"order:{order_id}"`) — not `uuid.uuid4()` at route-handler time unless you persist the ID in the response so the client can poll.
 
 ## Route design patterns
 
 ### 1. Submit-and-poll (async HTTP)
 
-Client submits a job, gets a job ID, polls for status.
+Client submits a job, gets an ID, polls for status:
 
-```py
+```python
+from __future__ import annotations
+import os, time
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from resonate import Resonate
+from resonate.resonate import Resonate
 
 app = FastAPI()
-resonate = Resonate.remote(host="localhost")
+r = Resonate(url=os.environ.get("RESONATE_URL", "http://localhost:8001"))
 
 
 class JobSubmission(BaseModel):
@@ -53,139 +55,147 @@ class JobSubmission(BaseModel):
 
 
 @app.post("/jobs")
-def submit_job(body: JobSubmission):
+async def submit_job(body: JobSubmission) -> dict:
     job_id = f"order:{body.order_id}"
-
-    # start the workflow; return immediately
-    resonate.options(target="poll://any@order-workers").begin_rpc(
-        job_id,
-        "process_order",
-        body.order_id,
-        body.items,
-    )
-
+    # Fire and forget — workflow runs durably in the background
+    r.options(target="order-workers").rpc(job_id, "process_order", body.order_id, body.items)
     return {"job_id": job_id, "status": "started"}
 
 
 @app.get("/jobs/{job_id}")
-def get_job(job_id: str):
+async def get_job(job_id: str) -> dict:
     try:
-        handle = resonate.get(job_id)
-        # non-blocking status check: a handle.result() would block;
-        # instead, query the promise store for state
-        promise = resonate.promises.get(job_id)
-        if promise.state == "pending":
-            return {"job_id": job_id, "status": "running"}
-        elif promise.state == "resolved":
-            return {"job_id": job_id, "status": "done", "result": promise.value}
+        record = await r.promises.get(job_id)
+        state = record.state if hasattr(record, "state") else "pending"
+        if state == "resolved":
+            return {"job_id": job_id, "status": "done", "result": record.value}
+        elif state == "rejected":
+            return {"job_id": job_id, "status": "failed", "reason": record.value}
         else:
-            return {"job_id": job_id, "status": "failed", "reason": promise.value}
+            return {"job_id": job_id, "status": "running"}
     except Exception:
         raise HTTPException(status_code=404, detail="job not found")
 ```
 
 ### 2. Submit-and-callback (webhook resolves promise)
 
-Client submits; workflow blocks on a `ctx.promise`; external system resolves via webhook.
+Client submits; workflow blocks on `ctx.promise()`; external system resolves via webhook:
 
-```py
-# worker
-@resonate.register
-def approve_then_ship(ctx, order_id: str):
-    p = yield ctx.promise(id=f"approval:{order_id}")
-    decision = yield p
+```python
+from resonate.types import Value
+
+# Worker
+async def approve_then_ship(ctx, order_id: str) -> dict:
+    approval = ctx.promise()
+    approval_id = await approval.id()
+    await ctx.run(notify_approver, order_id, approval_id)
+    decision = await approval
     if not decision.get("approved"):
         return {"status": "rejected"}
-    yield ctx.run(ship_order, order_id)
+    await ctx.run(ship_order, order_id)
     return {"status": "shipped"}
 
 
-# route — start
+# Route — start the workflow
 @app.post("/orders/{order_id}/approve-and-ship")
-def start(order_id: str):
-    resonate.options(target="poll://any@order-workers").begin_rpc(
+async def start(order_id: str) -> dict:
+    r.options(target="order-workers").rpc(
         f"order:{order_id}", "approve_then_ship", order_id
     )
     return {"status": "pending_approval"}
 
 
-# route — webhook resolves promise
+# Route — webhook resolves the durable promise
 @app.post("/webhooks/approval/{order_id}")
-def approval_webhook(order_id: str, payload: dict):
-    import json
-    resonate.promises.resolve(
-        id=f"approval:{order_id}",
-        data=json.dumps(payload),
+async def approval_webhook(order_id: str, payload: dict) -> dict:
+    await r.promises.resolve(
+        f"approval:{order_id}",
+        Value(data={"approved": payload.get("approved", False)}),
     )
     return {"ok": True}
 ```
 
 ### 3. Synchronous HTTP wrapping a fast workflow
 
-If the workflow completes quickly (seconds, not minutes), block on it and return the result directly:
+If the workflow completes quickly, block on it and return the result directly:
 
-```py
+```python
 @app.post("/price-quote")
-def price_quote(body: QuoteRequest):
+async def price_quote(body: QuoteRequest) -> dict:
     quote_id = f"quote:{body.sku}:{body.qty}"
-    result = resonate.options(target="poll://any@pricing-workers", timeout=10.0).rpc(
+    result = await r.options(target="pricing-workers").rpc(
         quote_id,
         "compute_quote",
         body.sku,
         body.qty,
-    )
+    ).result()
     return {"quote_id": quote_id, "price": result["price"]}
 ```
 
-`rpc()` blocks the route handler. Keep timeouts tight — a slow worker holds the HTTP request open.
+`r.rpc(...)` returns a handle; calling `.result()` and awaiting it blocks the route handler. Keep timeouts tight — a slow worker holds the HTTP request open.
 
 ## Worker-side lifecycle
 
-A worker process is just a Python program that:
-1. Instantiates `Resonate.remote(host=...)`
+A worker process:
+1. Instantiates `Resonate(url=..., group=...)`
 2. Registers its durable functions
-3. Long-polls forever
+3. Stays alive (via its own event loop or a `while True` sleep)
 
-```py
+```python
 # workers/order_worker.py
-from resonate import Resonate
+from __future__ import annotations
+import asyncio, os
+from typing import TYPE_CHECKING
+from resonate.resonate import Resonate
 
-resonate = Resonate.remote(host="resonate.internal")
+if TYPE_CHECKING:
+    from resonate.context import Context
 
-@resonate.register
-def process_order(ctx, order_id: str, items: list[str]):
-    yield ctx.run(validate_order, order_id, items)
-    yield ctx.run(charge_payment, order_id)
-    yield ctx.run(create_shipment, order_id)
+r = Resonate(url=os.environ.get("RESONATE_URL", "http://localhost:8001"), group="order-workers")
+
+async def process_order(ctx: Context, order_id: str, items: list[str]) -> dict:
+    await ctx.run(validate_order, order_id, items)
+    await ctx.run(charge_payment, order_id)
+    await ctx.run(create_shipment, order_id)
     return {"order_id": order_id, "status": "done"}
 
+r.register(process_order)
 
 if __name__ == "__main__":
-    import time
-    while True:
-        time.sleep(60)  # block forever; SDK's long-poller keeps the process alive
-```
+    async def main() -> None:
+        try:
+            # Block until Ctrl-C; SDK long-polls for work
+            await asyncio.Event().wait()
+        finally:
+            await r.stop()
 
-Or let your framework's main loop keep the process alive (uvicorn, gunicorn, hypercorn, etc.) if the same process serves HTTP too.
+    asyncio.run(main())
+```
 
 ## Separating worker groups
 
 For larger services, split specialization across worker groups:
 
-```py
-# db worker group — "poll://any@db"
-@resonate.register
-def query_orders(ctx, user_id: str):
-    db = ctx.get_dependency("db")
+```python
+# db worker group
+r_db = Resonate(url=url, group="db")
+
+async def query_orders(ctx: Context, user_id: str) -> list:
+    db = ctx.get_dependency(psycopg.Connection)
     return db.execute("SELECT * FROM orders WHERE user_id = %s", (user_id,)).fetchall()
 
-# business worker group — "poll://any@business"
-@resonate.register
-def place_order(ctx, user_id: str, cart: list[str]):
-    # reach into the DB group via RPC
-    history = yield ctx.rpc("query_orders", user_id).options(target="poll://any@db")
+r_db.register(query_orders)
+
+# business worker group
+r_biz = Resonate(url=url, group="business")
+
+async def place_order(ctx: Context, user_id: str, cart: list[str]) -> dict:
+    # Reach into the DB group via RPC
+    history = await ctx.options(target="db").rpc("query_orders", user_id)
     # ... business logic ...
     return {"user_id": user_id, "order_id": "..."}
+
+r_biz.register(place_order)
 ```
 
 Each group runs in its own process (or cluster of processes). RPC routes through Resonate's promise store with the server handling fair dispatch.
@@ -194,52 +204,51 @@ Each group runs in its own process (or cluster of processes). RPC routes through
 
 Small services often put the HTTP server and the worker in the same process:
 
-```py
+```python
+from __future__ import annotations
+import asyncio, os
 from fastapi import FastAPI
-from resonate import Resonate
-import asyncio
+from resonate.resonate import Resonate
 
 app = FastAPI()
-resonate = Resonate.remote(host="localhost")
+r = Resonate(url=os.environ.get("RESONATE_URL", "http://localhost:8001"))
 
-
-@resonate.register
-def process_order(ctx, order_id: str):
-    yield ctx.run(charge_payment, order_id)
+async def process_order(ctx, order_id: str) -> dict:
+    await ctx.run(charge_payment, order_id)
     return {"order_id": order_id, "status": "done"}
 
+r.register(process_order)
 
 @app.post("/orders/{order_id}")
-def start(order_id: str):
-    resonate.begin_run(f"order:{order_id}", process_order, order_id)
+async def start(order_id: str) -> dict:
+    r.run(f"order:{order_id}", process_order, order_id)
     return {"status": "started"}
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    await r.stop()
 ```
 
-Because `resonate.register` registers in the same process, both RPC-routing and in-process `begin_run` both work. For higher throughput, move workers to dedicated processes.
+Because `r.register` registers in the same process, both RPC-routing and in-process `r.run(...)` work. For higher throughput, move workers to dedicated processes.
 
 ## Distinct Python idioms
 
-- **FastAPI** is the leading modern web framework; patterns use FastAPI syntax. Flask + Django patterns translate directly — substitute `@app.route` for `@app.post`.
+- **FastAPI** is the leading modern web framework; patterns use FastAPI `async def` route handlers.
 - **Pydantic models** (`BaseModel`) for request bodies — idiomatic + validates at parse time.
-- **`int(time.time() * 1000)`** for ms-since-epoch timeouts on promises (vs TS's `Date.now()`).
-- **Resonate Python SDK is synchronous.** Unlike TS where you'd `await resonate.run(...)`, Python's `resonate.run(...)` blocks directly. No `async`/`await` on the Resonate side (though your FastAPI route handler can still be `async def` for other async I/O).
-- **`json.dumps(...)`** on promise data — explicit; TS is often implicit about encoding.
+- **`r.run(...)` is SYNC** — it returns a handle immediately; the actual async work is awaiting `handle.result()`. You can fire-and-forget by not awaiting the handle.
+- **`r.promises.*` are all `async`** — always `await` them in async route handlers.
+- **`Value(data=...)`** wraps the payload for `r.promises.resolve/reject`.
 
 ## Common gotchas
 
-- **Don't use Context APIs in a route handler.** `ctx` only exists inside a `@resonate.register`-ed function body. A route handler gets a `Resonate` client, not a `Context`.
-- **Don't rely on FastAPI request lifecycle for workflow timing.** A durable function can outlive an HTTP request by hours or days. Return a job ID to the client and let them poll (pattern 1) or subscribe via webhook (pattern 2).
-- **Don't share Resonate client instances across processes without care.** Each process (HTTP server, worker) instantiates its own `Resonate.remote(...)`; they coordinate via the Resonate server, not shared memory.
-- **Don't forget `target`.** When the route handler calls `rpc`/`begin_rpc`, specify `target="poll://any@worker-group"` so the invocation routes to a worker process and not back to the HTTP process.
-
-## What's NOT in this skill (and why)
-
-- **Deployment-specific guidance** (GCP Cloud Run + Python, Supabase + Python, AWS Lambda + Python) — deferred or skipped per the skills-expansion initiative's non-goal on new deployment targets. See `resonate-server-deployment` for server-side install, or the TS deployment skills for patterns that may translate by analogy.
-- **Token-based authentication on the Python client** — the Python SDK does not yet support token auth (`docs/deploy/security.mdx` is explicit about this). When the SDK adds it, a dedicated `resonate-token-authentication-python` skill lands.
+- **Don't use Context APIs in a route handler.** `ctx` only exists inside a `r.register()`-ed function body. A route handler gets a `Resonate` client, not a `Context`.
+- **Don't rely on FastAPI request lifecycle for workflow timing.** A durable function can outlive an HTTP request by hours or days. Return a job ID and let the client poll.
+- **Always `await r.stop()` on shutdown.** Register a shutdown handler (`@app.on_event("shutdown")`) to drain in-flight work gracefully.
+- **Don't forget `target`.** When the route handler calls `r.rpc(...)`, specify `.options(target="group-name")` so the invocation routes to a worker group.
 
 ## Related skills
 
-- `resonate-basic-ephemeral-world-usage-python` — `Resonate.remote`, `begin_run`, `rpc`, `options(target=)`, promise management
-- `resonate-basic-durable-world-usage-python` — `@resonate.register`, `ctx.run`, `ctx.rpc`, `ctx.promise`
+- `resonate-basic-ephemeral-world-usage-python` — `Resonate`, `r.run`, `r.rpc`, `r.options(target=)`, promise management
+- `resonate-basic-durable-world-usage-python` — `r.register`, `ctx.run`, `ctx.rpc`, `ctx.promise`
 - `resonate-human-in-the-loop-pattern-python` — webhook-driven promise resolution (pattern 2 in this skill, expanded)
 - `resonate-saga-pattern-python` — multi-step workflows suitable for pattern 3 (sync HTTP)

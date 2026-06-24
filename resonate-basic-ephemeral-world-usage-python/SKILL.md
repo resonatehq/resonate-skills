@@ -16,239 +16,238 @@ This skill covers the Client API surface. The Durable World (Context APIs) lives
 
 - Python ≥ 3.12 (the SDK uses recent typing features).
 - `resonate-sdk` on PyPI.
-- For remote mode: a running Resonate server. Local mode needs nothing.
-- **Server compatibility caveat:** Python SDK v0.6.7 currently targets the legacy Resonate server protocol; v0.9.x-targeting Python support is coming in a future release. If you're running a server at v0.9.x, check SDK release notes before expecting remote mode to work.
+- A running Resonate server (`resonate dev` starts one on `localhost:8001`). The Rust server v0.9.x runs on a single port — no separate store port.
 
 ## Install
 
 ```shell
-uv add resonate-sdk
-# or: pip install resonate-sdk
-# or: poetry add resonate-sdk
+uv add 'resonate-sdk>=0.7.0'
+# or: pip install 'resonate-sdk>=0.7.0'
+# or: poetry add 'resonate-sdk>=0.7.0'
 ```
 
 ## Initialize
 
-Local (zero-dependency, everything in-process):
+```python
+from __future__ import annotations
+import os
+from resonate.resonate import Resonate
 
-```py
-from resonate import Resonate
+url = os.environ.get("RESONATE_URL", "http://localhost:8001")
 
-resonate = Resonate()
-# or identically:
-resonate = Resonate.local()
+# Connect to a Resonate server
+r = Resonate(url=url)
+
+# With a named group (required for rpc routing to a specific worker pool)
+r = Resonate(url=url, group="order-workers")
+
+# With a default retry policy
+from resonate.retry import Never
+r = Resonate(url=url, retry_policy=Never())
 ```
 
-Remote (connects to a Resonate server):
-
-```py
-from resonate import Resonate
-
-resonate = Resonate.remote()
-# or with explicit host/port:
-resonate = Resonate.remote(
-    host="localhost",
-    store_port=8001,
-    message_source_port=8001,
-)
-```
-
-One `Resonate` instance per process. Use local mode for tests, scripts, and incremental adoption. Flip to remote when you need state persistence across restarts, multi-process coordination, or horizontal worker scaling.
+One `Resonate` instance per process. The server is always required for durable execution across restarts and multi-process coordination.
 
 ## Register a durable function
 
-Durable functions in Python are **generators**. Any `def` that uses `yield` internally is a generator; the SDK treats the yielded values as durable checkpoints. There is no `function*` keyword (TS) or `async def` requirement — just a regular `def` with `yield` inside.
+Durable functions in the Python SDK v0.7.0 are `async def` coroutines. Register them explicitly after definition:
 
-Prefer the decorator form:
+```python
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from resonate.context import Context
 
-```py
-@resonate.register
-def process_order(ctx, order_id: str):
+async def process_order(ctx: Context, order_id: str) -> dict:
     # ctx is the Context; everything inside the function body runs in the durable world
-    # ...
     return {"order_id": order_id, "status": "done"}
+
+r.register(process_order)
 ```
 
-Or register imperatively after definition:
+Registration name defaults to the function name. To override (useful for RPC when caller and callee are in different codebases):
 
-```py
-def process_order(ctx, order_id: str):
-    # ...
-    return result
-
-resonate.register(process_order)
+```python
+r.register(process_order_v2, name="process_order", version=2)
 ```
 
-Registration name defaults to the function name. To override (useful for RPC when the caller and callee are in different codebases):
+With a per-function retry policy:
 
-```py
-@resonate.register
-def process_order_v2(ctx, order_id: str):
-    # ...
-    return result
-# caller references "process_order_v2" by that exact string over RPC
+```python
+from resonate.retry import Exponential
+
+r.register(charge, retry_policy=Exponential())
 ```
 
 ## Share resources via dependencies
 
-The ephemeral world is where you construct things that durable code shouldn't build itself — database connections, HTTP clients, config objects. Register them once:
+The ephemeral world is where you construct things that durable code shouldn't build itself — database connections, HTTP clients, config objects. Register them by type:
 
-```py
+```python
 import psycopg
 
 conn = psycopg.connect(DATABASE_URL)
-resonate.set_dependency("db", conn)
+r.with_dependency(conn)
 ```
 
-Inside a durable function, access them via `ctx.get_dependency("db")`. Dependencies are *references*, not serialized state — keep them construction-heavy and usage-simple.
+Inside a durable function, access them by type via `ctx.get_dependency(MyType)`. Dependencies are references, not serialized state — keep them construction-heavy and usage-simple.
 
 ## Invoke a durable function
 
-There are four shapes of invocation, corresponding to same-process vs remote and sync vs async:
+```python
+import asyncio
+import time
 
-```py
-# same process, synchronous — blocks until the function returns
-result = resonate.run("invocation-id", process_order, "order-123")
+async def main() -> None:
+    # r.run is SYNC — returns a handle immediately; await the handle's .result()
+    handle = r.run(f"order-{time.time_ns()}", process_order, "order-123")
+    result = await handle.result()
 
-# same process, asynchronous — returns a handle to await later
-handle = resonate.begin_run("invocation-id", process_order, "order-123")
-# ... do other work ...
-result = handle.result()
+    # One-liner form
+    result = await r.run(f"order-{time.time_ns()}", process_order, "order-123").result()
 
-# remote process, synchronous — routes via Resonate server, waits for result
-result = resonate.rpc("invocation-id", "process_order", "order-123")
-
-# remote process, asynchronous — fire and await
-handle = resonate.begin_rpc("invocation-id", "process_order", "order-123")
-result = handle.result()
+    # Dispatch by name (rpc) — routes through the Resonate server to a worker group
+    result = await r.rpc(f"order-{time.time_ns()}", "process_order", "order-123").result()
 ```
 
-Invocation IDs are **yours to choose** and **deterministic**. Pick something stable that uniquely names this invocation across retries — `order:{order_id}` is better than `random.uuid()`, because the latter creates a new invocation every restart.
+Invocation IDs are **yours to choose** and **deterministic**. Pick something stable that uniquely names this invocation across retries — `f"order:{order_id}"` is better than a random UUID, because the latter creates a new invocation every restart.
 
 ## Subscribe to an existing invocation
 
-```py
-handle = resonate.get("invocation-id")
-result = handle.result()
+```python
+async def main() -> None:
+    handle = await r.get("my-invocation-id")
+    result = await handle.result()
 ```
 
-Raises if the invocation ID doesn't exist. Useful for a separate process (e.g., a status-check HTTP endpoint) to block on a workflow started elsewhere.
+Returns a handle for the existing promise. Useful for a separate process (e.g., a status-check HTTP endpoint) to block on a workflow started elsewhere.
+
+**Sync/async asymmetry:** `r.run(...)` is synchronous and returns a handle directly (no `await`). `r.get(...)` is asynchronous and must be awaited. This is intentional — `run` creates and enqueues immediately; `get` performs a network lookup to find the existing promise.
 
 ## Options
 
-Options configure the invocation. For ephemeral calls, options **precede** the call:
+Options configure the invocation. For top-level calls, options come first on the Resonate instance:
 
-```py
-from resonate.retry_policies import Exponential, Constant, Linear, Never
+```python
+from resonate.retry import Exponential, Constant, Linear, Never
 
-result = resonate.options(
-    target="poll://any@workers",     # RPC routing group
-    timeout=60.0,                    # seconds (not ms — Python uses seconds)
-    retry_policy=Exponential(),      # or Constant(), Linear(), Never()
-    tags={"tenant": "acme"},         # searchable metadata
-    idempotency_key="custom-ikey",
-    version=1,                       # function version for schema evolution
-).run("invocation-id", process_order, "order-123")
+handle = r.options(
+    target="backend",               # RPC routing group
+    retry_policy=Exponential(),     # or Constant(), Linear(), Never()
+    version=2,                      # function version for schema evolution
+).rpc(f"order-{time.time_ns()}", "process_order", "order-123")
+
+result = await handle.result()
 ```
-
-Retry policies are importable from `resonate.retry_policies` — `Exponential`, `Constant`, `Linear`, `Never` are all public.
 
 ## External promises
 
 External promises let a process outside the durable function resolve or reject it. This is the primitive behind human-in-the-loop workflows, webhooks, and any "wait for external event" pattern.
 
-```py
-import json, time
+```python
+from datetime import timedelta
+from resonate.types import Value
 
-# create a promise that another process will resolve
-resonate.promises.create(
-    id="approval-ord-123",
-    timeout=int(time.time() * 1000) + 30 * 60 * 1000,  # 30-minute deadline (ms since epoch)
-)
+# resolve a promise (e.g. from a webhook handler)
+await r.promises.resolve("approval-ord-123", Value(data={"approved": True}))
 
-# elsewhere (webhook, UI, CLI) resolves it
-resonate.promises.resolve(id="approval-ord-123", data=json.dumps({"approved": True}))
-
-# or rejects it
-resonate.promises.reject(id="approval-ord-123", data=json.dumps({"reason": "denied"}))
+# or reject it
+await r.promises.reject("approval-ord-123", Value(data={"reason": "denied"}))
 
 # query state
-p = resonate.promises.get("approval-ord-123")
+record = await r.promises.get("approval-ord-123")
 ```
 
-Inside a durable function, `yield ctx.promise(id="approval-ord-123")` blocks until the promise settles — see `resonate-basic-durable-world-usage-python` for details.
+All `r.promises.*` methods are `async` — always `await` them.
+
+## Schedules (cron)
+
+```python
+from datetime import timedelta
+
+sched = await r.schedule(
+    id="nightly-digest",
+    cron="0 9 * * *",
+    func_name="send_digest",
+    args=("user-123",),
+    promise_timeout=timedelta(minutes=30),
+)
+```
+
+## Shutdown
+
+Always stop the Resonate instance on exit:
+
+```python
+try:
+    result = await r.run(id, fn, arg).result()
+finally:
+    await r.stop()
+```
 
 ## What belongs in the ephemeral world vs the durable world
 
 **Ephemeral world (Client APIs, `Resonate` class):**
 - Initialization, registration, top-level invocation
-- Dependency construction (`set_dependency`)
-- External promise management (`promises.create/resolve/reject/get`)
-- Subscribing to running invocations (`get`)
+- Dependency construction (`r.with_dependency(obj)`)
+- External promise management (`r.promises.resolve/reject/get`)
+- Subscribing to running invocations (`r.get`)
 
 **Durable world (Context APIs, used inside a registered function):**
-- Sub-invocations (`ctx.run`, `ctx.rpc`, `ctx.begin_run`, `ctx.begin_rpc`, `ctx.detached`)
-- Sleeps, promises, deterministic time/random
-- Accessing dependencies (`ctx.get_dependency`)
-
-You cannot mix them. A Client API call inside a durable function raises; a Context API call outside a durable function has no context to bind to.
-
-## Worker lifecycle
-
-For remote mode, a process that calls `resonate.register(...)` becomes a worker for that function. Start the process and it begins long-polling for RPC invocations targeted at its group:
-
-```py
-from resonate import Resonate
-
-resonate = Resonate.remote(host="localhost")
-
-@resonate.register
-def process_order(ctx, order_id: str):
-    # ...
-    return result
-
-# block forever; the SDK's long-poller keeps the process alive
-import time
-while True:
-    time.sleep(60)
-```
-
-Or let your framework's main loop keep the process alive (FastAPI, Flask, etc.).
+- Sub-invocations (`await ctx.run(...)`, `await ctx.rpc(...)`)
+- Sleeps, promises, detached fire-and-forget
+- Accessing dependencies (`ctx.get_dependency(MyType)`)
 
 ## Common shapes
 
 **Top-level script:**
-```py
-from resonate import Resonate
 
-resonate = Resonate()
+```python
+from __future__ import annotations
+import asyncio
+import os
+import time
+from typing import TYPE_CHECKING
+from resonate.resonate import Resonate
 
-@resonate.register
-def greet(ctx, name: str):
+if TYPE_CHECKING:
+    from resonate.context import Context
+
+async def greet(ctx: Context, name: str) -> str:
     return f"Hello, {name}!"
 
+async def main() -> None:
+    r = Resonate(url=os.environ.get("RESONATE_URL", "http://localhost:8001"))
+    r.register(greet)
+    try:
+        result = await r.run(f"greet-{time.time_ns()}", greet, "Alice").result()
+        print(result)
+    finally:
+        await r.stop()
+
 if __name__ == "__main__":
-    print(resonate.run("greet:alice", greet, "Alice"))
+    asyncio.run(main())
 ```
 
 **HTTP handler that starts a workflow:**
-```py
+
+```python
 @app.post("/orders")
-def create_order(body: OrderBody):
+async def create_order(body: OrderBody):
     order_id = body.order_id
-    # return immediately; workflow continues in the background
-    resonate.begin_run(f"order:{order_id}", process_order, order_id)
+    # Return immediately; workflow continues durably in the background
+    r.run(f"order:{order_id}", process_order, order_id)
     return {"status": "started", "order_id": order_id}
 ```
 
-**Pure-ephemeral coordinator that calls workers over RPC:**
-```py
-resonate = Resonate.remote(host="resonate.example.com")
-result = resonate.rpc(
-    "batch:2026-04-16",
+**Pure-ephemeral coordinator that dispatches to workers over RPC:**
+
+```python
+handle = r.options(target="order-workers").rpc(
+    f"batch-{time.time_ns()}",
     "nightly_reconciliation",
     {"date": "2026-04-16"},
 )
+result = await handle.result()
 ```
 
 ## Related skills

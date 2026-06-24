@@ -121,6 +121,8 @@ async def main() -> None:
 
 Returns a handle for the existing promise. Useful for a separate process (e.g., a status-check HTTP endpoint) to block on a workflow started elsewhere.
 
+**Sync/async asymmetry:** `r.run(...)` is synchronous and returns a handle directly (no `await`). `r.get(...)` is asynchronous and must be awaited. This is intentional — `run` creates and enqueues immediately; `get` performs a network lookup to find the existing promise.
+
 ## Options
 
 Options configure the invocation. For top-level calls, options come first on the Resonate instance:

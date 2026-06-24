@@ -71,6 +71,8 @@ async def enrich_batch(ctx: Context, order_ids: list[str]) -> list[dict]:
     return results
 ```
 
+**Do NOT use `asyncio.gather` here.** `ctx.run(...)` returns a Resonate future, not an asyncio future; `asyncio.gather(ctx.run(...), ctx.run(...))` will not work correctly. The pattern above — collect futures in a list, then `await` each — is the correct idiom.
+
 Note: unawaited `ctx.run(...)` futures are still tracked by the runtime via structured concurrency — the parent cannot settle until all spawned children complete. But explicitly awaiting them gives you the results.
 
 ## Remote invocation: `ctx.rpc` and `ctx.detached`
@@ -211,7 +213,9 @@ async def foo(ctx: Context, arg: str) -> str:
 
 ## Determinism: time and randomness
 
-Never call `time.time()` or `random.random()` directly in a durable function — on replay, the values change and the function branches differently. Wrap them in a leaf via `ctx.run`:
+Never call `time.time()` or `random.random()` directly in a durable function — on replay, the values change and the function branches differently. Wrap them in a leaf via `ctx.run`.
+
+**v0.7.0 note:** `ctx.time.time()` and `ctx.random.random()` were removed in v0.7.0. If you are migrating from v0.6.x, replace any `ctx.time.time()` / `ctx.random.random()` calls with a leaf function dispatched via `ctx.run`, as shown below.
 
 ```python
 import time, random

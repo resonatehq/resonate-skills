@@ -159,21 +159,25 @@ Each child's error is caught individually; the parent returns a mixed list of su
 
 ## Idempotency via stable invocation IDs
 
-Fan-out children get deterministic ids automatically (e.g., `{parent_id}.1`, `{parent_id}.2`). If you dispatch via `ctx.rpc` with explicit ids, keep them stable across retries:
+Fan-out children get deterministic ids automatically (e.g., `{parent_id}.1`, `{parent_id}.2`). The SDK assigns these based on dispatch order during replay — you do NOT pass an explicit invocation id to `ctx.rpc` or `ctx.run`; there is no `id` option on `ctx.options` in v0.7.0. Stable replay ordering is sufficient for idempotency inside a durable function.
 
 ```python
 async def enrich_batch(ctx: Context, batch_id: str, order_ids: list[str]) -> list[dict]:
-    # rpc with explicit ids ensures replay reuses existing promises
+    # Child ids are assigned deterministically by the SDK (e.g. {parent_id}.1, .2, ...)
+    # Pass the function name first, then the arg
     futures = [
-        ctx.options(version=1).rpc(f"enrich:{batch_id}:{oid}", oid)
+        ctx.options(version=1).rpc("enrich_one", oid)
         for oid in order_ids
     ]
     return [await f for f in futures]
 ```
 
+If you need an explicit invocation id — for example to share a promise with an external observer — use the client-level `r.rpc(id, fn, *args)` from outside a durable function. Inside a durable function, ids are deterministic and managed by the runtime.
+
 ## Distinct Python idioms
 
 - **Futures launched before awaited:** `futures = [ctx.run(fn, x) for x in items]` then `[await f for f in futures]` — plain list comprehensions. No special syntax needed.
+- **Do NOT use `asyncio.gather`:** `ctx.run(...)` and `ctx.rpc(...)` return Resonate futures, not asyncio futures. `asyncio.gather(ctx.run(...), ctx.run(...))` will not work correctly. The correct fan-out is `futures = [ctx.run(fn, x) for x in items]; results = [await f for f in futures]`.
 - **`islice` from `itertools`** for bounded parallelism — cleaner than manual indexing.
 - **`try/except` per-future** — Python's narrow scoping lets you catch one child's failure without affecting siblings.
 - **No `Promise.all` or `Promise.allSettled`** — `[await f for f in futures]` gives all-or-first-error semantics; per-future try/except gives allSettled semantics.

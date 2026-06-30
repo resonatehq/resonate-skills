@@ -11,6 +11,9 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 - **8 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) + HTTP service design for the Python SDK.
 - **8 Rust** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the early-development Rust SDK (v0.1.0, not yet on crates.io); every Rust skill carries an explicit v0.1.0 caveat.
 - **8 Go** per-SDK skills — basic usage (ephemeral + durable) + debugging + patterns (saga, recursive fan-out, durable-sleep, human-in-the-loop, external system of record) for the pre-release Go SDK (no semver tag yet; install `@latest` or pin a commit); every Go skill carries a pre-release caveat and notes the two surfaces the Go SDK does not yet expose — a top-level `Schedule` API and a `promises` sub-client.
+- **8 Java** per-SDK skills — basic usage (ephemeral + durable) + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the Java SDK. Unlike Go, the Java SDK is **published on Maven Central** (`io.resonatehq:resonate-sdk-java:0.1.1`) and ships the fuller surface — `r.promises` and `r.schedules` sub-clients plus a top-level `r.schedule(...)` cron API — so the Java skills use those directly rather than documenting a gap. Requires Java 21+ (virtual threads); every Java skill carries a light prerelease note (API may change before `1.0`) and is compile-verified against `0.1.1`.
+
+That is **9 foundational + 47 per-SDK = 56 skills** (15 TypeScript, 8 Python, 8 Rust, 8 Go, 8 Java).
 
 ## What is a skill?
 
@@ -32,7 +35,7 @@ Every skill falls into one of two categories.
 
 **Foundational skills** are language-agnostic. They teach concepts, mental models, or operational patterns that apply across every Resonate SDK. Their directory names carry no SDK suffix.
 
-**Per-SDK skills** teach idiomatic usage of a specific Resonate SDK. Their directory names and frontmatter carry an SDK suffix: `-typescript`, `-python`, `-rust`, or `-go`. When the same concept applies across SDKs (e.g. sagas, HTTP services, debugging), each SDK gets its own skill — the per-SDK version expresses the pattern in the SDK's natural idioms rather than translating mechanically.
+**Per-SDK skills** teach idiomatic usage of a specific Resonate SDK. Their directory names and frontmatter carry an SDK suffix: `-typescript`, `-python`, `-rust`, `-go`, or `-java`. When the same concept applies across SDKs (e.g. sagas, HTTP services, debugging), each SDK gets its own skill — the per-SDK version expresses the pattern in the SDK's natural idioms rather than translating mechanically.
 
 ### Foundational
 
@@ -134,6 +137,24 @@ Every skill falls into one of two categories.
 
 **Not yet written for Go:** HTTP service design, token-authentication, and deployment skills. The Go SDK can drive `net/http` services today (see `example-node-drain-orchestrator-go`), but the dedicated skill waits on a stable API surface; deployment skills track validated paths. Two SDK surfaces are also absent at pre-release — a top-level `Schedule` API and a `promises` sub-client (issue #28) — and the relevant skills note the workarounds rather than inventing the API.
 
+### Per-SDK: Java
+
+**Prerelease note:** the Java SDK **is published on Maven Central** — pin `io.resonatehq:resonate-sdk-java:0.1.1` (the only release; confirmed against `maven-metadata.xml`, not the lagging search box). The API mirrors the Python SDK and may change before a stable `1.0`; every Java skill carries a light prerelease note. **Requires Java 21+** (virtual threads). Every code block is compile-verified against `0.1.1` (Java 21 toolchain) and cross-checked against `develop/java.mdx` (docs PR #230) and the `resonatehq-examples/*-java` repos.
+
+**Core SDK usage:**
+- [`resonate-basic-ephemeral-world-usage-java`](resonate-basic-ephemeral-world-usage-java/SKILL.md) — Client APIs: the fluent `Resonate.builder()` (or `new Resonate()` for local mode), `register` via method references, top-level `r.run` / `r.rpc` / `r.get`, typed vs untyped handles, the `promises` and `schedules` sub-clients, per-call options, and `stop` semantics (don't stop a worker).
+- [`resonate-basic-durable-world-usage-java`](resonate-basic-durable-world-usage-java/SKILL.md) — Context APIs inside durable functions: `ctx.run` / `ctx.rpc` / `ctx.sleep` / `ctx.promise` / `ctx.detached`, `ResonateFuture.await`, the immutable `Opts` record, `ctx.info` accessors, type-keyed DI (`ctx.getDependency`), the four retry policies, and the replay model.
+- [`resonate-basic-debugging-java`](resonate-basic-debugging-java/SKILL.md) — Java-specific failure modes: the Java 21 requirement, untyped-handle `Integer` vs `Long` decoding (read through `Number`), CLI positional-argument arity (one parameter per `--arg`), the `detached` by-name-only constraint, rejected-promise `ApplicationError` handling, and `r.stop()` silently killing a live worker.
+
+**Patterns:**
+- [`resonate-saga-pattern-java`](resonate-saga-pattern-java/SKILL.md) — Distributed transactions with a `try`/`catch` forward path, a tracked `List<Step>`, reverse-order compensation via an exhaustive `enum` + `switch`; retries controlled by the policy (`Retry.Never`) since Java has no non-retryable error wrapper. Catch `Exception` (await sneaky-throws).
+- [`resonate-recursive-fan-out-pattern-java`](resonate-recursive-fan-out-pattern-java/SKILL.md) — Parallel execution via the dispatch-all-then-await-all `List<ResonateFuture<T>>` pattern; recursive `ctx.rpc` self-dispatch to a named worker group; worker/client builder split with `group(...)`.
+- [`resonate-human-in-the-loop-pattern-java`](resonate-human-in-the-loop-pattern-java/SKILL.md) — Workflow steps that park on `ctx.promise()` until an external actor settles. Java **has** an `r.promises` sub-client, so resolution is a clean `r.promises.resolve(id, new Value(null, data))` — **no manual base64 encoding** (that's a Go-only workaround).
+- [`resonate-external-system-of-record-pattern-java`](resonate-external-system-of-record-pattern-java/SKILL.md) — Coordinate writes to an external SoR by wrapping every interaction in its own idempotent `ctx.run`; reach the SoR client via type-keyed DI (`r.withDependency` / `ctx.getDependency`); idempotency keys from `ctx.info().id()`.
+- [`resonate-durable-sleep-scheduled-work-java`](resonate-durable-sleep-scheduled-work-java/SKILL.md) — `ctx.sleep(Duration)` for in-workflow durable sleep, countdowns, and long-horizon delays, **plus** the top-level `r.schedule(...)` cron API and the `r.schedules` sub-client. Java ships a Schedule API; the Go SDK does not yet.
+
+**Not yet written for Java:** HTTP service design, token-authentication, and deployment skills. The Java SDK supports token auth (`builder().token(...)`) and can sit behind HTTP route handlers today, but the dedicated skills wait on a stable API surface and validated deployment paths — mirroring the Rust/Go deferral.
+
 ## Using these skills
 
 ### With Claude Code
@@ -163,7 +184,7 @@ Skills are plain Markdown. Any agent framework that supports prompt injection or
 Decision tree:
 
 1. **Is it a concept, mental model, or framework-agnostic principle that applies equally across every Resonate SDK?** → **Foundational.** No SDK suffix. Describe the idea in language-agnostic terms and link to per-SDK skills for concrete syntax.
-2. **Is it idiomatic usage of a specific SDK's API?** → **Per-SDK.** Suffix the directory name and frontmatter `name` with the SDK: `-typescript`, `-python`, `-rust`, or `-go`.
+2. **Is it idiomatic usage of a specific SDK's API?** → **Per-SDK.** Suffix the directory name and frontmatter `name` with the SDK: `-typescript`, `-python`, `-rust`, `-go`, or `-java`.
 3. **Is it operational or deployment knowledge?** → **Per-SDK** if the SDK shapes the deployment (e.g. Cloud Functions runtime, worker registration). **Foundational** if the operation is truly language-independent (e.g. installing the Resonate server binary).
 
 **Default to per-SDK.** Promote a skill to foundational only when it contains no SDK-specific APIs, syntax, or runtime idioms. Debug skills, for example, are per-SDK: error codes, replay tells, and diagnostic tooling differ enough across SDKs that a single unified debug skill would either read as abstract or balloon past an agent's working context. The concept of replay and durability lives in `durable-execution`; the SDK-specific tells live in each SDK's debug and advanced-reasoning skills.
@@ -180,7 +201,7 @@ When a pattern translates across SDKs (e.g. saga with compensation), each SDK ge
 
 ### Submitting a skill
 
-1. Create `your-skill-name[-typescript|-python|-rust|-go]/SKILL.md` with the frontmatter block.
+1. Create `your-skill-name[-typescript|-python|-rust|-go|-java]/SKILL.md` with the frontmatter block.
 2. Keep the `description` specific — it's what agents use to decide when to load the skill.
 3. Put example snippets inline; put long-form references under `your-skill-name/references/`.
 4. Keep prose tight: skills are read by LLMs with finite context.

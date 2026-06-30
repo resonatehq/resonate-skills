@@ -36,7 +36,7 @@ For the language-agnostic replay and recovery mental model, read `durable-execut
 - The external actor never settled the promise. Resolve it via the CLI (`resonate promise resolve <id> --data '"approved"'`) or `r.promises.resolve(id, new Value(null, "approved"))`.
 - The decoded type does not match what the awaiter expects, so `await` throws a decode error rather than returning.
 
-Unlike the Go SDK (which has no `promises` sub-client and needs a manual base64 dance), the **Java SDK ships `r.promises`** — resolve cleanly:
+Unlike the Go SDK (which has no `promises` sub-client and requires manual base64 encoding of the JSON payload), the **Java SDK ships `r.promises`** — resolve directly:
 
 ```java
 import io.resonatehq.resonate.Types.Value;
@@ -95,6 +95,22 @@ long result = ((Number) handle.result()).longValue();
 
 A method-reference invocation returns a typed `ResonateHandle<R>` and avoids the issue entirely — prefer it where the function is registered locally.
 
+### Generic collection result from a by-name invocation
+
+**Symptom:** a function that returns `List<MyRecord>` (or `Map<String, MyRecord>`) comes back as `List<LinkedHashMap>` when read from a by-name call — a `ClassCastException` or surprising field access on the elements.
+
+**Cause:** the by-name forms (`ctx.rpc("name", ...)`, `r.rpc(id, "name", ...)`, `r.get(id)`) decode against `Object` (`Resonate.java`), so Jackson reconstructs only generic JSON shapes — `LinkedHashMap` per element — and the record type parameter is lost at the boundary.
+
+**Fix:** use the **method-reference** form, which decodes against the function's full generic return type and gives a typed future:
+
+```java
+// Typed: ctx.run / ctx.rpc with a method reference decodes List<Delivery> correctly.
+ResonateFuture<List<Delivery>> f = ctx.run(Orders::deliverAll, batch);
+List<Delivery> delivered = f.await();
+```
+
+If you must read it from an untyped by-name result, reshape it with a Jackson `ObjectMapper.convertValue(result, new TypeReference<List<Delivery>>() {})` — note that pulls Jackson onto your *compile* classpath (the SDK only depends on it transitively at runtime), so add `com.fasterxml.jackson.core:jackson-databind` to your build to do this.
+
 ### CLI invocation arity mismatch
 
 **Symptom:** invoking from the CLI fails to bind arguments, or the function receives the wrong values / an arity error.
@@ -109,6 +125,14 @@ public static String countdown(Context ctx, int count, int delaySeconds) { ... }
 ```
 
 `example-quickstart-java` is the canonical reference. (This is the opposite of Go, where the same invoke binds the whole list to a single `[]int`.)
+
+### Instance method reference registered as a durable function
+
+**Symptom:** an `Owner::fn` reference compiles, but execution fails or behaves unexpectedly when the referenced method is an instance method (`this::fn`, `someObject::fn`).
+
+**Cause:** durable functions must be `public static`. The SDK recovers the method behind a reference by reflection and invokes it without an object instance, so an instance method — which needs a receiver — has nowhere to run from on the worker.
+
+**Fix:** make every registered function and every `ctx.run` / `ctx.rpc` target a `public static` method. Hold any per-instance state as a dependency (`r.withDependency` / `ctx.getDependency`) instead of closing over `this`.
 
 ### Rejected promise re-throws the application error
 

@@ -160,6 +160,7 @@ Both methods return a `ResonateFuture` immediately and both support the two-loop
 - **Unbounded recursion without a base case** — the server-side promise graph is not free; always guard `ctx.rpc(NAME, ...)` with a termination condition (`if (n <= 1)`).
 - **Sharing the default group between client and worker** — a client in the worker group joins the task pool and steals dispatches it cannot fulfill. Give the client its own group.
 - **Casting a by-name `rpc` numeric result straight to `Long`** — Jackson may have decoded it as `Integer`. Read through `Number`.
+- **Reading a `List<MyRecord>` (or any generic) back from a by-name `rpc`** — the by-name form decodes against `Object`, so Jackson hands back `List<LinkedHashMap>`, not your record type. Use the method-reference form (`ctx.rpc(Owner::fn, ...)` / `ctx.run(Owner::fn, ...)`) for a typed future. See `resonate-basic-debugging-java`.
 
 ## Related skills
 

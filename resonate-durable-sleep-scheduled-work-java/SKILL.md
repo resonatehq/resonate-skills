@@ -1,6 +1,6 @@
 ---
 name: resonate-durable-sleep-scheduled-work-java
-description: Implement durable sleep and scheduled/recurring work in Java with Resonate — ctx.sleep(Duration) inside workflows for timers, countdowns, reminders, and long-horizon delays that survive process restarts, plus the top-level r.schedule(...) cron API (and the r.schedules sub-client) for periodic invocation of a registered function. Unlike the Go and Python SDKs, the Java SDK ships a real Schedule API. Use when a workflow must wait for hours or days, or when a function should run on a fixed cron schedule. Verified against example-countdown-java / example-quickstart-java and develop/java.mdx (docs PR #230) at io.resonatehq:resonate-sdk-java:0.1.1.
+description: Implement durable sleep and scheduled/recurring work in Java with Resonate — ctx.sleep(Duration) inside workflows for timers, countdowns, reminders, and long-horizon delays that survive process restarts, plus the top-level r.schedule(...) cron API (and the r.schedules sub-client) for periodic invocation of a registered function. The Java SDK ships a Schedule API (the Go SDK does not). Use when a workflow must wait for hours or days, or when a function should run on a fixed cron schedule. Verified against example-countdown-java / example-quickstart-java and develop/java.mdx (docs PR #230) at io.resonatehq:resonate-sdk-java:0.1.1.
 license: Apache-2.0
 ---
 
@@ -13,7 +13,7 @@ license: Apache-2.0
 Two related capabilities in the Java SDK:
 
 1. **Durable sleep inside a workflow** — `ctx.sleep(Duration)` pauses execution; the worker process can exit and resume later without losing its place. The server holds the timer promise; the cost is one promise record, not process uptime.
-2. **Scheduled / recurring work** — `r.schedule(...)` registers a cron schedule that periodically invokes a registered function. **Unlike the Go and Python SDKs, the Java SDK ships a real top-level Schedule API** (plus the lower-level `r.schedules` sub-client). You do not need an in-workflow loop or an external cron unless you want one.
+2. **Scheduled / recurring work** — `r.schedule(...)` registers a cron schedule that periodically invokes a registered function. The Java SDK includes a top-level Schedule API (plus the lower-level `r.schedules` sub-client); the Go SDK does not expose one yet. This removes the need for an in-workflow sleep loop or an external cron trigger.
 
 Both patterns are durable: Resonate holds the continuation (or the schedule) in its store, not in a long-running thread.
 
@@ -130,10 +130,10 @@ Each `r.schedules` method returns a `CompletableFuture`, so `.join()` (or compos
 
 ## Distinct Java idioms
 
-- **`ctx.sleep(Duration).await()` returns nothing** — sleep futures carry no value; just `await()` to suspend. (Contrast `ctx.run` / `ctx.rpc`, whose futures decode a result.)
+- **`ctx.sleep(Duration).await()` returns nothing** — sleep futures carry no value; call `await()` to suspend. (Contrast `ctx.run` / `ctx.rpc`, whose futures decode a result.)
 - **`java.time.Duration` for sleeps** — `Duration.ofHours(1)`, `Duration.ofDays(7)`, `Duration.ofSeconds(stepSeconds)`. No raw millisecond integers, no cron strings for `ctx.sleep`.
 - **`r.schedule(...)` uses a cron string** — the schedule cadence is a 5-field cron expression; the `ctx.sleep` duration is a `Duration`. Don't confuse the two.
-- **A real Schedule API** — unlike the Go and Python SDKs (which have no top-level `schedule()`), Java ships `r.schedule(...)` and `r.schedules`. When porting a scheduled workflow from TypeScript/Rust, the Java equivalent exists; you do not need the Go/Python in-workflow-loop workaround.
+- **Top-level Schedule API** — Java ships `r.schedule(...)` and `r.schedules`; the Go SDK does not have this yet. When porting a scheduled workflow from TypeScript, Python, or Rust, the Java equivalent exists — no in-workflow-loop workaround needed.
 - **`ctx.sleep` vs `Thread.sleep`** — `Thread.sleep` inside a durable function is not durable (lost on crash, holds the virtual thread for the full duration). Always use `ctx.sleep` for anything that must survive a restart.
 
 ## Avoid
@@ -142,13 +142,15 @@ Each `r.schedules` method returns a `CompletableFuture`, so `.join()` (or compos
 - **Un-checkpointed side effects before a sleep** — any code before a `ctx.sleep` (or any durable boundary) re-executes on resume. Wrap observable side effects (DB writes, emails, webhooks) in `ctx.run` / `ctx.rpc` so the durable promise records the result and short-circuits replay.
 - **Clock-precision assumptions** — `ctx.sleep(Duration.ofHours(24))` firing in 23–25h is within spec (server/worker drift). Don't treat ±1h variance as a bug for long-horizon sleeps.
 - **Confusing the cron string with the function name in `r.schedule`** — the argument order is `(id, cron, funcName, args, kwargs, timeout, version)`.
+- **Putting function arguments in the `kwargs` (`Map.of()`) slot of `r.schedule`** — Java has no keyword arguments, so the SDK packs only the positional `args` list and leaves the kwargs slot empty (`Durable.java`). Pass all arguments in `List.of(arg1, arg2, ...)`; keep `kwargs` as `Map.of()`.
 - **Assuming a scheduled function runs without a registered worker** — `r.schedule` only creates the schedule; a worker must register the named function to execute each firing.
 
 ## Related skills
 
 - `resonate-basic-durable-world-usage-java` — `ctx.run`, `ctx.rpc`, `ctx.sleep` fundamentals; the Context the sleep API lives on
 - `resonate-basic-ephemeral-world-usage-java` — the `r.schedule(...)` / `r.schedules` sub-client surface
+- `resonate-recursive-fan-out-pattern-java` — the worker/client builder split and `CountDownLatch` keep-alive pattern; the registered function behind `r.schedule` runs in such a worker
 - `durable-execution` — foundational replay semantics; sleep is a durability checkpoint by design
 - `resonate-durable-sleep-scheduled-work-typescript` — sibling with `resonate.schedule()` (cron strings, ms durations)
 - `resonate-durable-sleep-scheduled-work-rust` — sibling with `resonate.schedule()`
-- **SDK parity note:** TypeScript, Rust, and **Java** expose a top-level `schedule()`; the Go and Python SDKs do not (they use in-workflow `ctx.sleep` loops or external cron). When porting *to* Java, use `r.schedule(...)` directly.
+- **SDK parity note:** TypeScript, Python, Rust, and **Java** expose a top-level `schedule()`; the Go SDK does not yet (it uses in-workflow `ctx.sleep` loops or external cron). When porting *to* Java, use `r.schedule(...)` directly.

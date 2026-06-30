@@ -1,6 +1,6 @@
 ---
 name: resonate-basic-ephemeral-world-usage-java
-description: Core patterns for using the Resonate Java SDK's Client APIs from the ephemeral world — building a Resonate instance with the fluent builder (or new Resonate() for local mode), registering durable functions via method references, invoking them top-level with r.run, dispatching remotely with r.rpc, reconnecting to an existing execution with r.get, reading typed vs untyped handles, the promises and schedules sub-clients, per-call options, and stop semantics. Requires Java 21+ (virtual threads). Verified against example-hello-world-java / example-countdown-java / example-recursive-factorial-java and develop/java.mdx (docs PR #230) at io.resonatehq:resonate-sdk-java:0.1.1.
+description: Use when writing Java code in main(), an HTTP handler, or any entry point that launches or coordinates Resonate workflows from the ephemeral world (the Client API surface, not code inside a durable function). Core patterns for the Resonate Java SDK's Client APIs — building a Resonate instance with the fluent builder (or new Resonate() for local mode), registering durable functions via method references, invoking them top-level with r.run, dispatching remotely with r.rpc, reconnecting to an existing execution with r.get, reading typed vs untyped handles, the promises and schedules sub-clients, per-call options, and stop semantics. Requires Java 21+ (virtual threads). Verified against example-hello-world-java / example-countdown-java / example-recursive-factorial-java and develop/java.mdx (docs PR #230) at io.resonatehq:resonate-sdk-java:0.1.1.
 license: Apache-2.0
 ---
 
@@ -16,15 +16,31 @@ This skill covers the Client API surface only. The Durable World (Context APIs i
 
 ## Install
 
-The Gradle wrapper pulls the SDK from Maven Central — there is nothing to install separately.
+The build tool pulls the SDK from Maven Central — there is nothing to install separately.
 
 ```kotlin
 // build.gradle.kts
+plugins {
+    application // lets you run with ./gradlew run
+}
 dependencies {
     implementation("io.resonatehq:resonate-sdk-java:0.1.1")
 }
 java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+application { mainClass = "io.resonatehq.examples.Main" }
 ```
+
+Maven is equivalent — add the dependency to `pom.xml` (and target Java 21 in the compiler plugin):
+
+```xml
+<dependency>
+    <groupId>io.resonatehq</groupId>
+    <artifactId>resonate-sdk-java</artifactId>
+    <version>0.1.1</version>
+</dependency>
+```
+
+Run a program with `./gradlew run` (Gradle) or `mvn compile exec:java -Dexec.mainClass=...` (Maven). A one-shot program exits when `main` returns; a worker blocks on a `CountDownLatch` (see [`Resonate.stop`](#resonatestop)).
 
 The SDK lives under a single package; import the types you need:
 
@@ -111,7 +127,7 @@ Local mode automatically uses a no-op heartbeat (there is no server lease endpoi
 
 ### Named worker group
 
-Unlike some sibling SDKs that set the group on a separately-constructed transport, the Java SDK exposes `group(...)` directly on the builder:
+The Java SDK sets the routing group directly on the builder:
 
 ```java
 Resonate r = Resonate.builder()
@@ -232,7 +248,7 @@ import io.resonatehq.resonate.Types.Value;
 r.promises.resolve("approval-1", new Value(null, "approved")).join();
 ```
 
-`promises` also exposes `reject`, `cancel`, `get`, `create`, and `search`. Each returns a `CompletableFuture`, so call `.join()` (or compose with `thenApply`) to wait for it. See `resonate-human-in-the-loop-pattern-java`.
+The full `promises` surface is `resolve`, `reject`, `cancel`, `get`, `create`, and `search`. Each returns a `CompletableFuture`, so call `.join()` (or compose with `thenApply`) to wait for it. See `resonate-human-in-the-loop-pattern-java`.
 
 ## The `schedules` sub-client
 

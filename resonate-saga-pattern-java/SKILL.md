@@ -172,12 +172,14 @@ ctx.options(new Opts().withRetryPolicy(new Never())) // single attempt
 - **Reading the system-of-record outside a `ctx.run`** — a raw DB/API call in the workflow body re-executes on every replay. Wrap observable side effects in their own `ctx.run` so the result is checkpointed.
 - **Swallowing compensation errors** — if a compensation `await()` throws after retries, surface it. Silently continuing produces a partially compensated saga with no audit trail.
 - **Inventing a `NonRetryable` error** — it does not exist in the Java SDK; use `Retry.Never()` or a bounded `maxRetries`.
+- **Copying the example's `finally { r.stop() }` into a persistent worker** — the `main` above is a one-shot demo. A long-lived saga worker registers the function and blocks on a `CountDownLatch`; calling `r.stop()` tears down its task pipeline.
 
 ## Related skills
 
 - `resonate-basic-durable-world-usage-java` — `ctx.run`, `Opts`, retry policies, the replay model
 - `resonate-recursive-fan-out-pattern-java` — parallel dispatch, composable with saga steps that fan out internally
 - `resonate-external-system-of-record-pattern-java` — idempotency keys and SoR reads inside durable leaves
+- `resonate-basic-debugging-java` — rejected-promise re-throw and `await()` sneaky-throw mechanics; the `r.stop()`-on-a-worker footgun
 - `durable-execution` — foundational replay semantics that make the `completed` list safe
 - `resonate-saga-pattern-typescript` — language-agnostic mental model, choreography vs orchestration
 - `resonate-saga-pattern-python` — the closest sibling; the Java API mirrors Python

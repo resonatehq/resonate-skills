@@ -1,6 +1,6 @@
 ---
 name: resonate-basic-durable-world-usage-java
-description: Core patterns for writing Resonate durable functions in Java — the Context first-parameter signature, Context APIs (ctx.run, ctx.rpc, ctx.sleep, ctx.promise, ctx.detached, ResonateFuture.await), per-call options via ctx.options(new Opts()), context accessors (ctx.info), type-keyed dependency injection (ctx.getDependency), retry policies, dispatch-then-await fan-out, and the replay model. Requires Java 21+ (virtual threads). Verified against the resonatehq-examples/*-java repos and develop/java.mdx (docs PR #230) at io.resonatehq:resonate-sdk-java:0.1.1.
+description: Use when writing the body of a Java durable function — any method registered with r.register or passed as a method reference to ctx.run. Core patterns for the Context API surface — the Context first-parameter signature, Context APIs (ctx.run, ctx.rpc, ctx.sleep, ctx.promise, ctx.detached, ResonateFuture.await), per-call options via ctx.options(new Opts()), context accessors (ctx.info), type-keyed dependency injection (ctx.getDependency), retry policies, dispatch-then-await fan-out, and the replay model. For multi-stage sleep timers, countdowns, and the cron Schedule API see resonate-durable-sleep-scheduled-work-java. Requires Java 21+ (virtual threads). Verified against the resonatehq-examples/*-java repos and develop/java.mdx (docs PR #230) at io.resonatehq:resonate-sdk-java:0.1.1.
 license: Apache-2.0
 ---
 
@@ -20,7 +20,7 @@ Use this skill whenever you are writing the body of a Java method that will be r
 
 ## Function shape
 
-A durable function takes a `Context` first, then up to five args. Both leaf functions and workflows share the shape — a "workflow" is just a function that itself performs durable ops:
+A durable function takes a `Context` first, then up to five args. Both leaf functions and workflows share the shape — a "workflow" is a function that itself performs durable ops:
 
 ```java
 import io.resonatehq.resonate.Context;
@@ -121,7 +121,7 @@ public static void reminder(Context ctx) {
 import io.resonatehq.resonate.Context.ResonateFuture;
 
 public static String approval(Context ctx) {
-    ResonateFuture<Object> promise = ctx.promise(); // 1-day default timeout, capped at the workflow deadline
+    ResonateFuture<Object> promise = ctx.promise(); // 1-day default timeout, capped at the parent's remaining deadline
     String approvalId = promise.id();
     // hand approvalId to whoever resolves it
     Object decision = promise.await(); // suspends until settled externally
@@ -201,7 +201,7 @@ public static String charge(Context ctx, int amount) {
 }
 ```
 
-Dependencies are keyed by their concrete class — register at most one instance per type, before processing starts. This is real type-keyed DI; you do not have to close clients over the workflow.
+Dependencies are keyed by their concrete class — register at most one instance per type, before processing starts. With type-keyed DI you do not have to close clients over the workflow or pass them as serialized args.
 
 ## Retries
 
@@ -231,8 +231,6 @@ public static String chargeStep(Context ctx, int amount) {
 A retry policy can be set three ways, in increasing specificity: SDK-wide (`Resonate.builder().retryPolicy(...)`), per-function (`register(ref, name, version, retryPolicy)`), or per-call (`ctx.options(new Opts().withRetryPolicy(...)).run(...)`). The SDK-wide default is `new Exponential(1, 30, 2, Long.MAX_VALUE)` — 1-second base, 30 retries, doubling, with an effectively unbounded `maxDelay` cap.
 
 ## The replay model
-
-This is the most important section — read it before writing your first workflow.
 
 Whenever a workflow suspends and resumes — after a `ctx.sleep`, a `ctx.rpc` await, or a pending `ctx.promise` await — **the entire workflow body re-runs from the top.** Resonate short-circuits already-settled child promises (their stored results replay without re-executing the function), but any code that runs *before* reaching a settled durable boundary executes again on every resume.
 
@@ -266,7 +264,7 @@ Rules of thumb:
 - **Method references, not strings, at typed call sites** — `ctx.run(Owner::fn, args)` gives a typed `ResonateFuture<R>`. The by-name `ctx.rpc("name", args)` form returns `ResonateFuture<Object>`.
 - **Immutable `Opts` record with `with*` methods** — `new Opts().withRetryPolicy(...).withTarget(...)`. Each `with*` returns a fresh record; chain them. Pass via `ctx.options(opts).run(...)`.
 - **`java.time.Duration` for time** — `Duration.ofHours(1)`, `Duration.ofSeconds(5)`. Retry-policy delays, by contrast, are plain `long` **seconds**.
-- **`ctx.sleep(...).await()` returns nothing** — there is no value to decode; just `await()` to suspend.
+- **`ctx.sleep(...).await()` returns nothing** — there is no value to decode; call `await()` to suspend.
 - **`record` types for args and results** — `public record Delivery(String channel, boolean ok) {}` is the idiomatic JSON-serializable payload.
 - **Type-keyed DI via `ctx.getDependency(Foo.class)`** — no need to close clients over the workflow; register once with `r.withDependency(new Foo())`.
 - **At most five args beyond `Context`** — `Fn.F0`–`Fn.F5`. Bundle more into a record.
@@ -277,6 +275,7 @@ Rules of thumb:
 - Branching on `System.currentTimeMillis()`, `Math.random()`, or `UUID.randomUUID()` directly in a workflow body — non-deterministic values differ across replay passes and diverge execution. Compute them inside a leaf so the result is checkpointed.
 - Awaiting inside a fan-out dispatch loop — this serializes what should be concurrent. Collect all futures, then await.
 - Using a method reference with `ctx.detached` — it is by-name `String` only.
+- Using an instance method reference (`this::fn`, `obj::fn`) as a durable function — durable functions must be `public static`. The SDK recovers and invokes the referenced method by reflection without an object instance, so an instance reference will not work even though it compiles.
 - Long-blocking work inside `ctx.run` — it holds the task lease open until the TTL expires. Use `ctx.rpc` or `ctx.promise`.
 - Calling the Resonate instance (`r`) from inside a durable function — use Context APIs only.
 

@@ -20,11 +20,9 @@ The core contract is simple: one system owns the truth. Resonate coordinates the
 - You need multi-step operations (reserve → charge → record) to be safe to retry without double-writes.
 - You cannot use distributed transactions across Resonate's promise store and the external system.
 
-Do not use this pattern when all writes live inside a single ACID transaction scope — just use the transaction.
+Do not use this pattern when all writes live inside a single ACID transaction scope — use the transaction directly.
 
 ## The replay principle — wrap every SoR call in `ctx.run`
-
-**This is the entire reason the pattern exists.**
 
 Whenever a workflow suspends and resumes (after a `ctx.sleep`, a remote `ctx.rpc`, or a pending `ctx.promise`), the entire workflow body re-executes from the top. Durable child promises short-circuit steps that already settled — the external call is not re-fired, and the stored result is returned directly. But any external call NOT wrapped in a `ctx.run` will execute again on every replay, producing double-writes.
 
@@ -45,7 +43,7 @@ public static String placeOrder(Context ctx, OrderArgs args) {
 
 ## Reaching the SoR client via dependency injection
 
-Unlike Go (which closes the client over the leaf), the Java SDK has real type-keyed DI. Register the client once on the instance with `r.withDependency`, and fetch it inside a leaf by type with `ctx.getDependency`:
+The Java SDK uses type-keyed DI. Register the client once on the instance with `r.withDependency`, and fetch it inside a leaf by type with `ctx.getDependency`. (Go takes a different path — it closes the client over the leaf function.)
 
 ```java
 import io.resonatehq.resonate.Context;
@@ -190,6 +188,7 @@ Inside the leaf, treat an idempotent-success response (e.g. a `409 Already Reser
 
 - `resonate-basic-durable-world-usage-java` — `ctx.run`, `Opts`, `ctx.getDependency`, `ctx.info`, the replay model
 - `resonate-saga-pattern-java` — when the SoR doesn't cover all steps and you need compensation across services
+- `resonate-basic-debugging-java` — idempotency-key bugs, generic decode (`List<LinkedHashMap>`) from by-name results, retry exhaustion
 - `durable-execution` — foundational replay semantics; this pattern is checkpoint-centric
 - `resonate-external-system-of-record-pattern-typescript` — language-agnostic mental model
 - `resonate-external-system-of-record-pattern-python` — the closest sibling; the Java DI API mirrors Python

@@ -12,7 +12,7 @@ license: Apache-2.0
 
 For the language-agnostic mental model, start with `resonate-human-in-the-loop-pattern-typescript`. The idea is identical: create a latent durable promise, hand its ID to the external actor who will settle it, and await — the workflow parks until settlement arrives, surviving any number of crashes or restarts.
 
-**The Java-specific advantage is the resolution path.** The Java SDK ships a top-level `r.promises` sub-client (it mirrors Python), so settling a promise from outside the workflow is a clean `r.promises.resolve(id, new Value(...))`. There is **no manual base64 encoding** — that trap is specific to the Go SDK, which has no `promises` sub-client. Do not copy the Go base64 dance into Java.
+**Resolution from Java is direct.** The Java SDK ships a top-level `r.promises` sub-client (it mirrors Python), so settling a promise from outside the workflow is `r.promises.resolve(id, new Value(...))`. There is **no manual base64 encoding** — that extra step is a Go-specific workaround for a sub-client Go lacks. Don't copy it into Java.
 
 ## When to use
 
@@ -73,7 +73,7 @@ Key points:
 
 The Java SDK gives you three mechanisms. Prefer the sub-client when resolving from Java.
 
-### 1. The `promises` sub-client (cleanest — resolving from Java)
+### 1. The `promises` sub-client (preferred when resolving from Java)
 
 ```java
 import io.resonatehq.resonate.Types.Value;
@@ -109,7 +109,7 @@ curl -s -X POST "http://localhost:8001/promises/${APPROVAL_ID}/resolve" \
      -d '{"value":{"data":"ImFwcHJvdmVkIg=="}}'
 ```
 
-This base64 step is exactly what `r.promises.resolve` and the CLI do for you — prefer mechanism 1 or 2 from Java/ops, and reach for the raw endpoint only from a non-Java caller.
+This base64 step is exactly what `r.promises.resolve` and the CLI do for you — prefer mechanism 1 or 2 from Java/ops, and reach for the raw endpoint only from a non-Java caller. The `ImFwcHJvdmVkIg==` value is correct for the default `NoopEncryptor`; if you configured an `Encryptor` on the builder, the payload is encrypted before base64, so a raw caller would have to replicate that encryption too — another reason to use the sub-client or CLI.
 
 ## Hand-off across processes
 

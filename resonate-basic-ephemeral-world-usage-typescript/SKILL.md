@@ -6,7 +6,7 @@ license: Apache-2.0
 
 # Resonate Basic Ephemeral World Usage
 
-> **SDK version:** This skill reflects `@resonatehq/sdk` v0.10.0 (current on npm).
+> **SDK version:** This skill reflects `@resonatehq/sdk` v0.10.2 (current on npm).
 
 ## Overview
 
@@ -255,7 +255,7 @@ const promise = await resonate.promises.get("approval-123");
 
 ```ts
 // Elsewhere (webhook, UI, CLI):
-await resonate.promises.settle("approval-123", "resolved", {
+await resonate.promises.resolve("approval-123", {
   data: JSON.stringify({
     approved: true,
     approver: "alice@example.com",
@@ -266,12 +266,20 @@ await resonate.promises.settle("approval-123", "resolved", {
 ### Reject Promise
 
 ```ts
-await resonate.promises.settle("approval-123", "rejected", {
+await resonate.promises.reject("approval-123", {
   data: JSON.stringify({
     reason: "Insufficient funds",
   }),
 });
 ```
+
+### Cancel Promise
+
+```ts
+await resonate.promises.cancel("approval-123");
+```
+
+> **Migration note (v0.10.0 → v0.10.1+):** The single `resonate.promises.settle(id, state, value)` method was split into `resolve`, `reject`, and `cancel` in v0.10.1. The old `settle()` is private in v0.10.2. Update any code that calls `.settle()` directly.
 
 ## Dependency Injection
 

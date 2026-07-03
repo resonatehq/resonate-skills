@@ -235,6 +235,8 @@ test("runStep executes steps in order on replay", async () => {
 
 The gold standard. Run thousands of random operation sequences against both your server and a reference model. Any divergence is a bug.
 
+> **Availability note:** `resonate-test-fuzz` (the `tran.ts` / `fuzz.ts` harness described below) is referenced by name but does not have a public source repository. The scripts at `path/to/tran.ts` and `path/to/fuzz.ts` are placeholders — there is no public clone URL for this tooling at this time. The section documents the approach and the conceptual contract; treat it as aspirational guidance for external contributors until a public harness is released.
+
 ### How `resonate-test-fuzz` Works
 
 ```

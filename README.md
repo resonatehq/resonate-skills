@@ -62,7 +62,7 @@ Every skill falls into one of two categories.
 - [`resonate-basic-debugging-typescript`](resonate-basic-debugging-typescript/SKILL.md) — Investigating stuck workflows, error codes, unexpected replays.
 
 **Reasoning:**
-- [`resonate-advanced-reasoning-typescript`](resonate-advanced-reasoning-typescript/SKILL.md) — Mapping the Distributed Async Await spec to TypeScript SDK patterns and verifying correctness/durability/failure semantics.
+- [`resonate-advanced-reasoning-typescript`](resonate-advanced-reasoning-typescript/SKILL.md) — Mapping the [resonatehq/resonate-specification](https://github.com/resonatehq/resonate-specification) abstract machine to TypeScript SDK patterns and verifying correctness/durability/failure semantics.
 
 **Patterns:**
 - [`resonate-saga-pattern-typescript`](resonate-saga-pattern-typescript/SKILL.md) — Distributed transactions with compensation logic.

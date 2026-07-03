@@ -380,3 +380,5 @@ The asset templates are **TypeScript**. For Python/Rust/Go, start from the per-S
 | `references/TESTING.md` | Verifying that durability actually works under failure |
 | `references/DEPLOYMENT.md` | Deploying to production (VPS, serverless, Docker) |
 | `references/TROUBLESHOOTING.md` | Debugging workflow hangs, failures, or unexpected behavior |
+
+**Normative spec reference:** For promise lifecycle, handler semantics, and state-transition ground truth, see the Resonate specification — an executable abstract machine in Lean 4: <https://github.com/resonatehq/resonate-specification>

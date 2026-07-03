@@ -1,14 +1,23 @@
 ---
 name: resonate-advanced-reasoning
-description: Advanced reasoning bridge between the Distributed Async Await specification and the Resonate TypeScript SDK. Use when mapping spec concepts (processes, executions, promises, coordination, recovery) to concrete SDK patterns and when validating correctness, durability, and failure semantics.
+description: Advanced reasoning bridge between the Resonate specification (resonatehq/resonate-specification) and the Resonate TypeScript SDK. Use when mapping spec concepts (processes, executions, promises, coordination, recovery) to concrete SDK patterns and when validating correctness, durability, and failure semantics.
 license: Apache-2.0
 ---
 
 # Resonate Advanced Reasoning
 
+## Spec Reference
+
+The normative ground truth for promise lifecycle, handler semantics, and state transitions is the **Resonate specification** — an executable abstract machine in Lean 4:
+
+- Repository: <https://github.com/resonatehq/resonate-specification>
+- Key files: `spec/01-objects/state.lean` (promise/task state), `spec/02-actions/` (`P-*.lean` for promise handlers, `T-*.lean` for task handlers, `S-*.lean` for schedule handlers)
+
+When this skill and the spec diverge, the spec wins.
+
 ## Overview
 
-Use this skill to translate Distributed Async Await concepts into Resonate TypeScript SDK usage. Treat the spec as the mental model and the SDK as its concrete expression.
+Use this skill to translate Resonate specification concepts into Resonate TypeScript SDK usage. Treat the spec as the mental model and the SDK as its concrete expression.
 
 ## Spec to SDK Translation Map
 
@@ -32,7 +41,7 @@ Use this skill to translate Distributed Async Await concepts into Resonate TypeS
 - Durable function -> `resonate.register("name", function* ...)`.
 - Local invocation -> `ctx.run` / `ctx.beginRun`.
 - Remote invocation -> `ctx.rpc` / `ctx.beginRpc` with target options.
-- External promise -> `ctx.promise()` and `resonate.promises.resolve/reject`.
+- External promise -> `ctx.promise()` and `resonate.promises.resolve/reject/cancel`.
 - Call graph -> inspect with `resonate tree <id>`.
 - Root promise -> the top-level invocation ID passed to `run` or `rpc`.
 
@@ -96,16 +105,21 @@ function* durable(ctx: Context, id: string) {
 Spec: execution should be equivalent with or without interruptions.
 
 SDK:
-- Use `ctx.date.now()` and `ctx.math.random()`.
-- Do not call `Date.now()` or `Math.random()` inside durable code.
+- Do not call `Date.now()`, `Math.random()`, or `crypto.randomUUID()` directly inside durable generator code — these return different values on replay, breaking equivalence.
+- **SDK-sanctioned pattern:** pass timestamps and random seeds as arguments from the caller into the workflow, then thread them through as ordinary parameters. The value is fixed at invocation time and stable across replays.
 - Ensure all return values are serializable.
 
 ```ts
-function* deterministic(ctx: Context) {
-  return {
-    now: yield* ctx.date.now(),
-    rand: yield* ctx.math.random(),
-  };
+// ✅ CORRECT — timestamp fixed at call site, stable on replay
+await resonate.run("report/2024-01-15", generateReport, {
+  asOf: Date.now(),       // captured once in the ephemeral world
+  seed: Math.random(),    // ditto
+});
+
+function* generateReport(ctx: Context, { asOf, seed }: ReportInput) {
+  // asOf and seed are ordinary parameters — same value on every replay
+  const data = yield* ctx.run(fetchData, asOf);
+  return data;
 }
 ```
 
@@ -171,5 +185,5 @@ const result = yield* ctx.rpc(
 
 ## When to Hand Off
 
-- Use `resonate-develop-typescript` for SDK usage patterns and hands-on TS authoring.
-- Use `resonate-debug-troubleshoot` for runtime diagnosis.
+- Use `resonate-basic-durable-world-usage-typescript` for SDK usage patterns and hands-on TS authoring.
+- Use `resonate-basic-debugging-typescript` for runtime diagnosis.

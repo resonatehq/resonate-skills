@@ -38,7 +38,7 @@ code.
 
 | SDK | Version | Source |
 |---|---|---|
-| TypeScript | `@resonatehq/sdk` v0.10.2 | npm |
+| TypeScript | `@resonatehq/sdk` v0.11.2 | npm |
 | Python | `resonate-sdk` v0.6.7 | PyPI |
 | Rust | `resonate-sdk` v0.4.0 | crates.io |
 | Go | pre-release, tracks `main` | GitHub |
@@ -125,7 +125,7 @@ code.
   to whoever will resolve it (email/webhook/log). Replace `handle.signal(...)`
   with `resonate.promises.resolve(id, value)`. Delete Query handlers.
 - **RESOLVE API — verify against pinned version:**
-  - ts (0.10.2): `resonate.promises.resolve(id, { data: Buffer.from(JSON.stringify(v)).toString("base64") })`
+  - ts (0.11.2): `resonate.promises.resolve(id, { data: Buffer.from(JSON.stringify(v)).toString("base64") })`
   - py (0.6.7): `resonate.promises.resolve(id=…, ikey=…)`
   - rs (0.4.0): `resonate.promises.resolve(&id, Value::from_serializable(v)?)`
     (the example repo tracks SDK `main` and uses `json!(v)`, which does NOT compile

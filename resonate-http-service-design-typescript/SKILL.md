@@ -6,7 +6,7 @@ license: Apache-2.0
 
 # Resonate HTTP Service Design
 
-> **SDK version:** This skill reflects `@resonatehq/sdk` v0.10.0 (current on npm).
+> **SDK version:** This skill reflects `@resonatehq/sdk` v0.11.2 (current on npm).
 
 ## Overview
 
@@ -89,9 +89,8 @@ app.get("/jobs/:id", async (req, res) => {
 // Webhook: external system resolves promise
 app.post("/webhooks/approval", async (req, res) => {
   const { promiseId, approved } = req.body;
-  await resonate.promises.settle(promiseId, "resolved", {
-    data: JSON.stringify({ approved }),
-  });
+  const data = Buffer.from(JSON.stringify({ approved })).toString("base64");
+  await resonate.promises.resolve(promiseId, { data });
   res.status(204).end();
 });
 ```

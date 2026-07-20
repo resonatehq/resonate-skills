@@ -6,7 +6,7 @@ license: Apache-2.0
 
 # Resonate Lovable Usage Prompt — TypeScript
 
-> **SDK version:** This skill reflects `@resonatehq/sdk` v0.10.0 (current on npm).
+> **SDK version:** This skill reflects `@resonatehq/sdk` v0.11.2 (current on npm).
 
 ## Overview
 
@@ -218,7 +218,7 @@ Since Lovable **cannot run persistent workers**, your Lovable backend should:
 
 1. **Use SDK** to START workflows on external workers: `resonate.beginRpc()` with `target: "poll://any@workers"`
 2. **Use HTTP API** to QUERY workflow state: `GET /promises?id=...`
-3. **Use HTTP API or SDK** to SETTLE promises: `PATCH /promises/{id}` or `resonate.promises.settle(id, "resolved", { data })`
+3. **Use HTTP API or SDK** to RESOLVE promises: `PATCH /promises/{id}` or `resonate.promises.resolve(id, { data })`
 
 The actual workflow EXECUTION happens on your external workers (Cloud Run, Fly.io, etc.), not in Lovable.
 
@@ -354,7 +354,7 @@ router.post("/api/approvals/resolve/:promiseId", async (req, res) => {
 
   const data = Buffer.from(JSON.stringify({ approved })).toString('base64');
 
-  await resonate.promises.settle(promiseId, "resolved", { data });
+  await resonate.promises.resolve(promiseId, { data });
 
   res.json({ success: true });
 });
@@ -798,7 +798,7 @@ router.post("/api/approvals/:promiseId", async (req, res) => {
   const { approved } = req.body;
 
   const data = Buffer.from(JSON.stringify({ approved })).toString('base64');
-  await resonate.promises.settle(promiseId, "resolved", { data });
+  await resonate.promises.resolve(promiseId, { data });
 
   res.json({ success: true });
 });

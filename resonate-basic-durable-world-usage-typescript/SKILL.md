@@ -6,7 +6,9 @@ license: Apache-2.0
 
 # Resonate Basic Durable World Usage
 
-> **SDK version:** This skill reflects `@resonatehq/sdk` v0.10.0 (current on npm).
+> **SDK version:** This skill reflects `@resonatehq/sdk` v0.11.2 (current on npm).
+>
+> **Two execution engines (v0.11.0+):** The SDK now ships two engines. This skill documents the **generator engine** (imported from `@resonatehq/sdk`), which uses `function*` / `yield*` and is the basis of all existing Resonate examples. An **async/await engine** (imported from `@resonatehq/sdk/async`) was added in v0.11.0 and is documented in `resonate-async-await-engine-typescript`.
 
 ## Overview
 
@@ -393,7 +395,7 @@ app.post("/approve/:promiseId", async (req, res) => {
   const response = { approved: true, approver: req.body.userId };
   const encodedData = Buffer.from(JSON.stringify(response)).toString('base64');
 
-  await resonate.promises.settle(req.params.promiseId, "resolved", {
+  await resonate.promises.resolve(req.params.promiseId, {
     data: encodedData,
   });
 

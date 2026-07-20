@@ -71,7 +71,7 @@ const result = await handle.result();
 - Import is `from "@resonatehq/sdk/async"` not `from "@resonatehq/sdk"`
 - Functions are `async function` not `function*`
 - `ctx.run(func, ...args)` in the async engine has **no id argument** (ID is auto-generated); in the generator engine `ctx.run(fn, ...args)` is also ID-less at the context level, but the API shape differs
-- No `beginRun` / `beginRpc` on the async-engine client — `run()` returns `Promise<ResonateHandle<T>>` directly
+- No `beginRun` / `beginRpc` on the async-engine client — every `run` and `rpc` already returns a `ResonateHandle<T>` directly, so `beginRun` would be redundant
 
 ---
 
@@ -106,8 +106,7 @@ This is the async-engine equivalent of the generator engine's `ctx.beginRun` + s
 The async/await engine defaults to **no retry** (`Never`) when no retry policy is specified. To opt into retries on a specific `ctx.run` call, pass `ctx.options({ retryPolicy: ... })`:
 
 ```typescript
-import { Resonate } from "@resonatehq/sdk/async";
-import { Exponential, Never } from "@resonatehq/sdk";
+import { Resonate, Exponential, Never } from "@resonatehq/sdk/async";
 
 resonate.register("reliableStep", async (ctx, taskId: string) => {
   // Default: Never retry — a failure propagates immediately
@@ -124,7 +123,7 @@ resonate.register("reliableStep", async (ctx, taskId: string) => {
 });
 ```
 
-`Never`, `Exponential`, `Linear`, and `Constant` are all exported from `@resonatehq/sdk` (the same import path as the generator engine) and can be used with both engines.
+`Never`, `Exponential`, `Linear`, and `Constant` are all exported from `@resonatehq/sdk/async` and can be used with both engines.
 
 **Tip:** For saga-style compensation, let steps fail immediately with the default `Never` policy and catch in the outer function.
 
@@ -155,13 +154,14 @@ ctx.options({
 | `yield* ctx.run(fn, args)` | `await ctx.run(fn, args)` |
 | `yield* ctx.rpc(fn, args)` | `await ctx.rpc(fn, args)` |
 | `yield* ctx.sleep(ms)` | `await ctx.sleep(ms)` |
-| `yield* ctx.promise(...)` | `await ctx.promise(...)` |
+| `const p = yield* ctx.promise(opts)` | `const dp = ctx.promise(opts)` — no await; returns `DurablePromise` with `.id` |
+| `const val = yield* p` | `const val = await dp` |
 | `resonate.beginRun(id, fn, ...args)` | `resonate.run(id, fn, ...args)` (returns handle) |
 | `await resonate.run(id, fn, ...args)` | `(await resonate.run(id, fn, ...args)).result()` |
 
 The server-side promise structure is identical; existing generator-engine workflows on the server are unaffected by the async engine.
 
-See the [SDK README migration guide](https://github.com/resonatehq/resonate-sdk-ts#migration) for the authoritative changelog.
+See the [SDK README migration guide](https://github.com/resonatehq/resonate-sdk-ts#migrating-from-generators) for the authoritative changelog.
 
 ---
 
@@ -172,9 +172,10 @@ The async engine uses the same `resonate.promises.resolve()` API as the generato
 ```typescript
 // Inside a workflow: park on an external decision
 resonate.register("awaitApproval", async (ctx, orderId: string) => {
-  const { id, promise } = await ctx.promise<{ approved: boolean }>();
-  // Surface `id` to whoever needs to approve (webhook, email, etc.)
-  const decision = await promise;
+  const dp = ctx.promise<{ approved: boolean }>();
+  // dp.id is available synchronously — surface it to whoever needs to approve
+  console.log("Approval promise id:", dp.id);
+  const decision = await dp;
   return decision;
 });
 
@@ -188,8 +189,7 @@ await resonate.promises.resolve(promiseId, { data });
 ## Full runnable example
 
 ```typescript
-import { Resonate } from "@resonatehq/sdk/async";
-import { Exponential } from "@resonatehq/sdk";
+import { Resonate, Exponential } from "@resonatehq/sdk/async";
 
 const resonate = new Resonate({ url: "http://localhost:8001" });
 

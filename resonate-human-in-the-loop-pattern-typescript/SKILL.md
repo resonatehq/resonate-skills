@@ -6,7 +6,7 @@ license: Apache-2.0
 
 # Resonate Human-in-the-Loop Pattern (TypeScript)
 
-> **SDK version:** This skill reflects `@resonatehq/sdk` v0.10.0 (current on npm).
+> **SDK version:** This skill reflects `@resonatehq/sdk` v0.11.2 (current on npm).
 
 ## Overview
 
@@ -123,7 +123,7 @@ app.post("/approve/:promiseId", async (req, res) => {
   // CRITICAL: Base64 encode data for Resonate server
   const encodedData = Buffer.from(JSON.stringify(decision)).toString('base64');
 
-  await resonate.promises.settle(promiseId, "resolved", {
+  await resonate.promises.resolve(promiseId, {
     data: encodedData,
   });
 
@@ -229,7 +229,7 @@ app.get("/approve/:promiseId", async (req, res) => {
 
   const encoded = Buffer.from(JSON.stringify(decision)).toString('base64');
 
-  await resonate.promises.settle(promiseId, "resolved", { data: encoded });
+  await resonate.promises.resolve(promiseId, { data: encoded });
 
   res.send(`Decision recorded: ${action}`);
 });
@@ -486,12 +486,12 @@ function* uiApprovalWorkflow(ctx: Context, orderId: string) {
 ### 1. Forgetting Base64 Encoding
 
 ```typescript
-// ❌ WRONG - Resonate server expects base64
-await resonate.promises.settle(promiseId, "resolved", { data: { approved: true } as any });
+// ❌ WRONG - Resonate server expects base64; settle() is private since v0.10.2
+await (resonate.promises as any).settle(promiseId, "resolved", { data: { approved: true } });
 
 // ✅ CORRECT
 const data = Buffer.from(JSON.stringify({ approved: true })).toString('base64');
-await resonate.promises.settle(promiseId, "resolved", { data });
+await resonate.promises.resolve(promiseId, { data });
 ```
 
 ### 2. Non-Deterministic Promise IDs

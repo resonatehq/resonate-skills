@@ -544,7 +544,7 @@ function* observableSaga(ctx: Context, orderId: string) {
 
 ## Retry Policy for Saga Steps
 
-By default Resonate retries failed `ctx.run()` calls with exponential backoff. In a saga, you often want certain steps to **fail fast** so the catch block runs immediately and compensation starts. Use a no-retry policy:
+By default, the generator engine applies **no retry** (`Never`) to generator functions called via `ctx.run()`. In a saga you typically want non-idempotent steps to fail fast so the catch block runs immediately and compensation starts. For steps you do want to retry, pass an explicit policy via `ctx.options`. Use a no-retry inline object (or the exported `Never` class) to make failure semantics explicit:
 
 ```typescript
 // Never retry — failure propagates immediately to the catch block
@@ -585,7 +585,7 @@ function* bookTrip(ctx: Context, tripId: string) {
 | Compensation step | Default | Compensations must complete; retry is fine |
 | Transient network call | Default | Let Resonate recover from flakiness |
 
-**Note:** `Never` and `Exponential` retry policy classes exist in the SDK (`resonate-sdk-ts/src/retries.ts`) but are not exported from the public `@resonatehq/sdk` index. Use the inline object above until they're exported.
+**Note (v0.11.2+):** `Never`, `Exponential`, `Linear`, and `Constant` retry policy classes are **exported** from the public `@resonatehq/sdk` index. You can use `new Never()` or `new Exponential()` directly instead of the inline object. The inline object form above is still valid and may be preferred for readability.
 
 ## Common Pitfalls
 

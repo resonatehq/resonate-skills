@@ -38,7 +38,7 @@ transform, and reach for the linked per-SDK skill for idiomatic target code.
 
 | SDK | Resonate (target) | DBOS (source) |
 |---|---|---|
-| TypeScript | `@resonatehq/sdk` v0.10.2 (npm) | `@dbos-inc/dbos-sdk` v4.19.8 (npm) |
+| TypeScript | `@resonatehq/sdk` v0.11.2 (npm) | `@dbos-inc/dbos-sdk` v4.19.8 (npm) |
 | Python | `resonate-sdk` v0.6.7 (PyPI) | `dbos` v2.23.0 (PyPI) |
 | Rust | `resonate-sdk` v0.4.0 (crates.io) | — (no DBOS Rust SDK) |
 | Go | pre-release, tracks `main` | `dbos-transact-golang` v0.17.0 |
@@ -155,7 +155,7 @@ transform, and reach for the linked per-SDK skill for idiomatic target code.
   The promise's resolved value is the status — you don't need a separate
   `get_event` channel.
 - **RESOLVE API — verify against pinned version:**
-  - ts (0.10.2): the `data` field is base64-encoded JSON —
+  - ts (0.11.2): the `data` field is base64-encoded JSON —
     `const data = Buffer.from(JSON.stringify(v), "utf8").toString("base64"); resonate.promises.resolve(id, { data })`
     (the codec base64-decodes `data`, so a raw `JSON.stringify(v)` round-trips to garbage)
   - py (0.6.7): `resonate.promises.resolve(id=…, ikey=…)` — the

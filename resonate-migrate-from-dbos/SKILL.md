@@ -40,7 +40,7 @@ transform, and reach for the linked per-SDK skill for idiomatic target code.
 |---|---|---|
 | TypeScript | `@resonatehq/sdk` v0.11.2 (npm) | `@dbos-inc/dbos-sdk` v4.19.8 (npm) |
 | Python | `resonate-sdk` v0.6.7 (PyPI) | `dbos` v2.23.0 (PyPI) |
-| Rust | `resonate-sdk` v0.4.0 (crates.io) | — (no DBOS Rust SDK) |
+| Rust | `resonate-sdk` v0.6.0 (crates.io) | — (no DBOS Rust SDK) |
 | Go | pre-release, tracks `main` | `dbos-transact-golang` v0.17.0 |
 
 ## Core mappings (apply everywhere)
@@ -161,8 +161,8 @@ transform, and reach for the linked per-SDK skill for idiomatic target code.
   - py (0.6.7): `resonate.promises.resolve(id=…, ikey=…)` — the
     `example-human-in-the-loop-py` gateway resolves by id with an idempotency key,
     not a data payload; confirm the kwargs against the example before emitting.
-  - rs (0.4.0): `resonate.promises.resolve(&id, Value::from_serializable(v)?)`
-    (use the `Value` form — `json!(v)` does NOT compile against the released crate)
+  - rs (0.6.0): `resonate.promises.resolve(&id, Value::from_serializable(v)?)`
+    (the example repo may use `json!(v)` — verify it compiles against your released crate version; use the `Value` form if not)
   - go (main): **no high-level resolve yet** — use the CLI
     `resonate promises resolve <id> --value '{"headers":{},"data":"…"}'` or the
     lower-level sender/promise-settle path.

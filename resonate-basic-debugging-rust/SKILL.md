@@ -1,12 +1,12 @@
 ---
 name: resonate-basic-debugging-rust
-description: Debug and troubleshoot Resonate applications using the Rust SDK. Use when investigating registration errors, serde serialization failures, tokio runtime mismatches, git-dependency install issues, or the v0.1.0-specific caveats of the early-development Rust SDK.
+description: Debug and troubleshoot Resonate applications using the Rust SDK. Use when investigating registration errors, serde serialization failures, tokio runtime mismatches, install issues, or SDK-version-specific caveats of the early-development Rust SDK.
 license: Apache-2.0
 ---
 
 # Resonate Basic Debugging — Rust
 
-> **v0.1.0 caveat.** This SDK is in active development, not on crates.io, and documented behaviors may shift between point releases. Failure modes listed here are what the documented surface produces; new ones will appear as the SDK grows.
+> **SDK note.** This SDK is in active development (v0.6.0, published on crates.io), and documented behaviors may shift between releases. Failure modes listed here are what the documented surface produces; new ones will appear as the SDK grows.
 
 ## Overview
 
@@ -21,28 +21,28 @@ For the language-agnostic replay + recovery mental model, read `durable-executio
 3. **Does the function kind match expectations?** The SDK infers kind from the first parameter — `&Context` vs `&Info` vs a value type
 4. **Is serde happy?** Input/output types need `Serialize` + `Deserialize` derives; stack traces mentioning `serde_json::Error` mean a type doesn't derive correctly
 5. **Is the tokio runtime correct?** `#[tokio::main]` or `#[tokio::test(flavor = "multi_thread")]` needed; single-threaded runtime can deadlock on SDK internals
-6. **Check server + SDK compatibility.** v0.1.0 git-dep-from-master — your checkout may be behind or ahead of whichever server version you're testing against
+6. **Check server + SDK compatibility.** The SDK version in `Cargo.toml` must align with the server version you're testing against; check the SDK CHANGELOG for compatibility notes
 
 ## Install / dependency issues
 
-**Symptom:** `error: failed to resolve patches for manifest` or `cannot find crate 'resonate'`.
+**Symptom:** `cannot find crate 'resonate'` or version-resolution errors.
 
-**Cause:** SDK is not on crates.io; must be a git dependency. Check your `Cargo.toml`:
+**Cause:** Check your `Cargo.toml`. The SDK is published on crates.io — pin the current release:
 
 ```toml
 [dependencies]
-resonate = { git = "https://github.com/resonatehq/resonate-sdk-rs", branch = "master" }
+resonate = { package = "resonate-sdk", version = "0.6" }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 ```
 
-If you want a pinned revision for reproducibility:
+For pre-release work that must track `main` directly (e.g. to pick up a not-yet-released fix):
 
 ```toml
-resonate = { git = "https://github.com/resonatehq/resonate-sdk-rs", rev = "abc1234" }
+resonate = { package = "resonate-sdk", git = "https://github.com/resonatehq/resonate-sdk-rs", branch = "main" }
 ```
 
-Run `cargo update -p resonate` to pull the latest master commit when upstream changes.
+Run `cargo update -p resonate` to pull the latest version when upstream changes.
 
 ## Registration errors
 
@@ -109,23 +109,26 @@ let result = ctx.run(leaf, "input".into()).await;
 let result: String = ctx.run(leaf, "input".into()).await?;
 ```
 
-## `.spawn()` double-await
+## `.spawn()` is synchronous — don't add `.await` after it
 
-**Symptom:** "Cannot await on `DurableFuture` directly" or "expected String, found DurableFuture".
+**Symptom:** compile error like "no method named `poll` found", a type-mismatch where the compiler expected `DurableFuture<T>` but got an opaque future type, or a lifetime/borrow error that only appears on the `.spawn()` line.
 
-**Cause:** `.spawn()` returns a `DurableFuture` after its own `.await` — you need a second `.await?` on the returned future later.
+**Cause:** As of SDK 0.5.0+, `ctx.run(...).spawn()` / `ctx.rpc(...).spawn()` on a `Context` is **synchronous** — it returns `Result<DurableFuture<T>>` directly, without suspending. Adding `.await` after `.spawn()` is an old habit that no longer compiles.
 
 ```rust
-// the spawn itself awaits; you get a DurableFuture back
+// BAD — .await after .spawn() fails to compile in 0.5.0+
 let fut = ctx.run(leaf, "input".into()).spawn().await?;
+
+// CORRECT — .spawn() is sync; unwrap with ? then await the DurableFuture later
+let fut = ctx.run(leaf, "input".into()).spawn()?;
 
 // ... do other work ...
 
-// later: await the DurableFuture to get the actual T
+// later: a single .await on the DurableFuture gets the actual T
 let result: String = fut.await?;
 ```
 
-This is different from TS/Python's `begin_run` which returns a promise-like handle directly without the double await.
+This differs from TS/Python's `begin_run` / `ctx.rfi`, which return a promise-like handle from an async call. In Rust, you use `?` (not `.await?`) to unwrap the `Result<DurableFuture>` from `.spawn()`, then a single `.await?` later to get `T`.
 
 ## tokio runtime mismatches
 
@@ -181,7 +184,7 @@ async fn bad2(ctx: &Context) -> Result<()> {
 }
 ```
 
-v0.1.0 does NOT expose `ctx.time.time()` / `ctx.random.random()` helpers. Until those land, the safe pattern is:
+The SDK does NOT expose `ctx.time.time()` / `ctx.random.random()` helpers. Until those land, the safe pattern is:
 - Do non-deterministic work inside a leaf (so the value is checkpointed)
 - Or derive branches from the invocation's stable ID / input args, not runtime randomness
 
@@ -232,13 +235,13 @@ If this fails, the problem is infrastructure (Cargo deps, tokio runtime, SDK ver
 
 ## Server compatibility
 
-v0.1.0 of the Rust SDK's server-protocol compatibility is in flux. Before reporting a bug, verify:
+The Rust SDK (v0.6.0) ships with tested compatibility against the Resonate server; check the SDK CHANGELOG for the minimum server version. Before reporting a bug, verify:
 
-1. Your SDK commit — `cargo metadata | grep resonate` for the git commit hash
+1. Your SDK version — `cargo metadata | grep resonate` for the resolved version
 2. Your server version — `resonate --version` on the server binary
 3. The SDK's compatibility notes — check the SDK's CHANGELOG or README on GitHub
 
-Expect intermittent breaks between master-branch SDK commits and stable server releases until the SDK ships 1.0.
+Expect that the API surface may shift between 0.x releases until the SDK reaches 1.0.
 
 ## CLI one-liners
 
@@ -256,7 +259,7 @@ The CLI is SDK-agnostic; same commands work for TS, Python, Rust worker ecosyste
 
 Cross-reference with `resonate-basic-durable-world-usage-rust` for the full treatment; quick summary for debug triage:
 
-### Exists in v0.1.0 source (even if `rust.mdx` doesn't mention it)
+### Exists in v0.6.0 source (even if `rust.mdx` doesn't mention it)
 - `ctx.promise::<T>()` — Context-side HITL primitive (source: `resonate/src/context.rs:352`)
 - `ctx.get_dependency::<T>()` + `Info::get_dependency::<T>()` — type-dispatched DI (source: `context.rs:115`, `info.rs:42`)
 - `ctx.info()` returning extra accessors `branch_id`, `tags`
@@ -264,8 +267,8 @@ Cross-reference with `resonate-basic-durable-world-usage-rust` for the full trea
 
 If a workflow is mysteriously missing one of these, the issue is likely *docs staleness*, not SDK absence. Cite source paths when an agent reviewer questions whether an API exists.
 
-### NOT in v0.1.0 source
-- `ctx.detached` fire-and-forget — use un-awaited `.spawn()`
+### NOT in v0.6.0 source
+- `ctx.detached` fire-and-forget — use `.spawn()?` and don't await the returned `DurableFuture`
 - `ctx.random.random()` / `ctx.time.time()` — do non-det work inside a leaf so it's checkpointed
 - `ctx.panic()` / `ctx.assert()` — use Rust's `panic!` / `assert!` (non-recoverable) or `Result` propagation (recoverable)
 

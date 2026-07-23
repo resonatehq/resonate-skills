@@ -40,7 +40,7 @@ code.
 |---|---|---|
 | TypeScript | `@resonatehq/sdk` v0.11.2 | npm |
 | Python | `resonate-sdk` v0.6.7 | PyPI |
-| Rust | `resonate-sdk` v0.4.0 | crates.io |
+| Rust | `resonate-sdk` v0.6.0 | crates.io |
 | Go | pre-release, tracks `main` | GitHub |
 
 ## Core mappings (apply everywhere)
@@ -127,9 +127,9 @@ code.
 - **RESOLVE API — verify against pinned version:**
   - ts (0.11.2): `resonate.promises.resolve(id, { data: Buffer.from(JSON.stringify(v)).toString("base64") })`
   - py (0.6.7): `resonate.promises.resolve(id=…, ikey=…)`
-  - rs (0.4.0): `resonate.promises.resolve(&id, Value::from_serializable(v)?)`
-    (the example repo tracks SDK `main` and uses `json!(v)`, which does NOT compile
-    against the released v0.4.0 crate — use the `Value` form)
+  - rs (0.6.0): `resonate.promises.resolve(&id, Value::from_serializable(v)?)`
+    (the example repo may use `json!(v)` — verify it compiles against your
+    released crate version; use the `Value` form if not)
   - go (main): **no high-level resolve yet** — use the CLI
     `resonate promises resolve <id> --value '{"data":"…"}'` or
     `r.Sender().PromiseSettle(...)` with a base64-encoded codec value

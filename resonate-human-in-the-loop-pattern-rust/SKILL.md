@@ -1,12 +1,12 @@
 ---
 name: resonate-human-in-the-loop-pattern-rust
-description: Implement human-in-the-loop workflows in Rust with Resonate — durable functions that block on ctx.promise::<T>() until an external actor (webhook, UI, CLI, operator) resolves via resonate.promises.resolve/reject. Use when a Rust workflow step must wait on a decision or data that doesn't come from another worker. v0.1.0 caveat: ctx.promise is in sdk-rs source but not yet in rust.mdx.
+description: Implement human-in-the-loop workflows in Rust with Resonate — durable functions that block on ctx.promise::<T>() until an external actor (webhook, UI, CLI, operator) resolves via resonate.promises.resolve/reject. Use when a Rust workflow step must wait on a decision or data that doesn't come from another worker. Note: ctx.promise is in the SDK (0.6.0) but not yet in rust.mdx.
 license: Apache-2.0
 ---
 
 # Resonate Human-in-the-Loop Pattern — Rust
 
-> **v0.1.0 caveat.** `ctx.promise::<T>()` is a real `pub fn` in the Rust SDK source (`resonate-sdk-rs:resonate/src/context.rs:352`) with a full `PromiseTask<T>` builder, but it is not yet covered in `docs/develop/rust.mdx` as of April 2026. The API is safe to use; cite source paths when reviewers ask. APIs may shift between v0.x releases.
+> **SDK note (0.6.0).** `ctx.promise::<T>()` is a real `pub fn` in the Rust SDK source (`resonate-sdk-rs:resonate/src/context.rs`) with a full `PromiseTask<T>` builder, but it is not yet covered in `docs/develop/rust.mdx`. The API is safe to use; cite source paths when reviewers ask. APIs may shift between 0.x releases.
 
 ## Overview
 
@@ -213,7 +213,7 @@ async fn notify_approver((approver, promise_id): (String, String)) -> Result<()>
 
 - **Polling via `ctx.sleep` + a status check** — defeats the durable-await semantics; costs checkpoints + wall-clock time
 - **Using the promise ID outside serde-compatible payloads** — if an external actor constructs a custom JSON payload that doesn't deserialize to your typed `T`, `.await?` returns a deserialization error. Match the schema on both sides or use `serde_json::Value` for flexibility
-- **Assuming promise IDs are stable across invocations** — the SDK generates them per-invocation within the call graph. A replay reuses the same ID for the same logical promise (idempotency), but you cannot hand-craft IDs like you could in TS/Python's `ctx.promise(id=...)` at v0.1.0
+- **Assuming promise IDs are stable across invocations** — the SDK generates them per-invocation within the call graph. A replay reuses the same ID for the same logical promise (idempotency), but you cannot hand-craft IDs like you could in TS/Python's `ctx.promise(id=...)`
 
 ## Related skills
 

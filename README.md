@@ -9,7 +9,7 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 - **9 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, the CLI reference, the cross-SDK defaults reference, the Temporal and DBOS migration playbooks, and the `resonate-bash` MCP tool guide that apply across every Resonate SDK.
 - **16 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
 - **8 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) + HTTP service design for the Python SDK.
-- **8 Rust** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the early-development Rust SDK (v0.1.0, not yet on crates.io); every Rust skill carries an explicit v0.1.0 caveat.
+- **8 Rust** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the early-development Rust SDK (v0.6.0, on crates.io); every Rust skill carries an explicit SDK-in-active-development note.
 - **8 Go** per-SDK skills — basic usage (ephemeral + durable) + debugging + patterns (saga, recursive fan-out, durable-sleep, human-in-the-loop, external system of record) for the pre-release Go SDK (no semver tag yet; install `@latest` or pin a commit); every Go skill carries a pre-release caveat and notes the two surfaces the Go SDK does not yet expose — a top-level `Schedule` API and a `promises` sub-client.
 - **8 Java** per-SDK skills — basic usage (ephemeral + durable) + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the Java SDK. Unlike Go, the Java SDK is **published on Maven Central** (`io.resonatehq:resonate-sdk-java:0.1.1`) and ships the fuller surface — `r.promises` and `r.schedules` sub-clients plus a top-level `r.schedule(...)` cron API — so the Java skills use those directly rather than documenting a gap. Requires Java 21+ (virtual threads); every Java skill carries a light prerelease note (API may change before `1.0`) and is compile-verified against `0.1.1`.
 
@@ -102,21 +102,21 @@ Every skill falls into one of two categories.
 
 ### Per-SDK: Rust
 
-**v0.1.0 caveat:** the Rust SDK is in active development and not yet on crates.io. Install via git dependency. APIs may change between releases; every Rust skill carries this caveat at the top.
+**SDK note:** the Rust SDK is in active development (v0.6.0, published on crates.io). APIs may change between releases; every Rust skill carries this note at the top.
 
 **Core SDK usage:**
 - [`resonate-basic-ephemeral-world-usage-rust`](resonate-basic-ephemeral-world-usage-rust/SKILL.md) — Client APIs: `Resonate::new(ResonateConfig)` / `Resonate::local()`, `#[resonate::function]` attribute macro, registration, `.run()` / `.rpc()` / `.schedule()`, promises API.
 - [`resonate-basic-durable-world-usage-rust`](resonate-basic-durable-world-usage-rust/SKILL.md) — Context APIs inside `#[resonate::function]`-decorated async functions: `ctx.run`, `ctx.rpc`, `ctx.sleep`, `.spawn()` for parallelism, function kinds (Workflow / Leaf with Info / Pure leaf).
-- [`resonate-basic-debugging-rust`](resonate-basic-debugging-rust/SKILL.md) — Rust-specific failure modes: serde derive errors, `ctx` vs `info` confusion, `.spawn()` double-await, tokio runtime mismatches, v0.1.0 server-compat.
+- [`resonate-basic-debugging-rust`](resonate-basic-debugging-rust/SKILL.md) — Rust-specific failure modes: serde derive errors, `ctx` vs `info` confusion, `.spawn()` synchronous return (use `?` not `.await?`), tokio runtime mismatches, v0.6.0 SDK.
 
 **Patterns:**
 - [`resonate-saga-pattern-rust`](resonate-saga-pattern-rust/SKILL.md) — Distributed transactions with `Result<T>` + match-based compensation dispatch via enum; forward path uses `?` propagation.
-- [`resonate-recursive-fan-out-pattern-rust`](resonate-recursive-fan-out-pattern-rust/SKILL.md) — Parallel execution via `.spawn().await?` double-await pattern; recursion; bounded parallelism via slice `.chunks(n)`.
+- [`resonate-recursive-fan-out-pattern-rust`](resonate-recursive-fan-out-pattern-rust/SKILL.md) — Parallel execution via `.spawn()?` (synchronous) then await each `DurableFuture`; recursion; bounded parallelism via slice `.chunks(n)`.
 - [`resonate-human-in-the-loop-pattern-rust`](resonate-human-in-the-loop-pattern-rust/SKILL.md) — Workflow steps that block on `ctx.promise::<T>()` until a webhook, UI, or operator settles via `resonate.promises.resolve/reject/cancel`.
 - [`resonate-external-system-of-record-pattern-rust`](resonate-external-system-of-record-pattern-rust/SKILL.md) — Coordinate writes to an external SoR (Postgres, TigerBeetle, Stripe) with idempotency keys; type-dispatched DI via `ctx.get_dependency::<T>()`.
 - [`resonate-durable-sleep-scheduled-work-rust`](resonate-durable-sleep-scheduled-work-rust/SKILL.md) — `ctx.sleep(Duration)` for in-workflow durable sleep + `resonate.schedule()` cron-registered ephemeral-world scheduling.
 
-**Docs-vs-source note:** `ctx.promise::<T>()`, `ctx.get_dependency::<T>()`, `ctx.info()`, and `resonate.with_dependency::<T>()` all exist in the v0.1.0 SDK source but are not yet covered in `docs/develop/rust.mdx`. The Rust skills above use these APIs with source-path citations; docs are expected to catch up in a future release.
+**Docs-vs-source note:** `ctx.promise::<T>()`, `ctx.get_dependency::<T>()`, `ctx.info()`, and `resonate.with_dependency::<T>()` all exist in the v0.6.0 SDK source but are not yet covered in `docs/develop/rust.mdx`. The Rust skills above use these APIs with source-path citations; docs are expected to catch up in a future release.
 
 **Not yet written for Rust:** HTTP service design + deployment skills. These track SDK stability and will land when the source/docs validate the relevant paths.
 

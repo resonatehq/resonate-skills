@@ -1,12 +1,12 @@
 ---
 name: resonate-basic-durable-world-usage-rust
-description: Core patterns for writing Resonate durable functions in Rust using the #[resonate::function] attribute — function kinds (Workflow, Leaf with Info, Pure leaf), Context APIs (ctx.run, ctx.rpc, ctx.sleep with Duration, .spawn() for parallelism, builder options), and the Result<T> return convention. Use when writing any Rust function decorated with #[resonate::function]. v0.1.0 caveat: APIs may change between releases.
+description: Core patterns for writing Resonate durable functions in Rust using the #[resonate::function] attribute — function kinds (Workflow, Leaf with Info, Pure leaf), Context APIs (ctx.run, ctx.rpc, ctx.sleep with Duration, .spawn() for parallelism, builder options), and the Result<T> return convention. Use when writing any Rust function decorated with #[resonate::function]. SDK in active development; APIs may change between releases.
 license: Apache-2.0
 ---
 
 # Resonate Basic Durable World Usage — Rust
 
-> **v0.1.0 caveat.** The Resonate Rust SDK is in active development (not yet on crates.io). API surface described here matches `docs/develop/rust.mdx` as of April 2026. Verify against the current SDK source before relying on any specific shape.
+> **SDK note.** The Resonate Rust SDK (`resonate-sdk` v0.6.0, published on crates.io) is in active development; APIs may change between releases. Verify against the current SDK source before relying on any specific shape.
 
 ## Overview
 
@@ -65,8 +65,8 @@ async fn foo(ctx: &Context, input: String) -> Result<String> {
 ```rust
 #[resonate::function]
 async fn foo(ctx: &Context, input: String) -> Result<(String, String)> {
-    let fut_a = ctx.run(step_a, input.clone()).spawn().await?;
-    let fut_b = ctx.run(step_b, input).spawn().await?;
+    let fut_a = ctx.run(step_a, input.clone()).spawn()?;
+    let fut_b = ctx.run(step_b, input).spawn()?;
 
     let a = fut_a.await?;
     let b = fut_b.await?;
@@ -96,13 +96,11 @@ With target group + parallelism:
 async fn parallel_remote(ctx: &Context) -> Result<()> {
     let f1 = ctx.rpc::<String>("worker-a", "data".into())
         .target("poll://any@group-a")
-        .spawn()
-        .await?;
+        .spawn()?;
 
     let f2 = ctx.rpc::<String>("worker-b", "data".into())
         .target("poll://any@group-b")
-        .spawn()
-        .await?;
+        .spawn()?;
 
     f1.await?;
     f2.await?;
@@ -200,7 +198,7 @@ Type-dispatched: there is one dependency per type per `Resonate` instance. For m
 
 `&Info` also exposes `get_dependency::<T>()`, so a leaf that takes `info: &Info` as its first parameter can access dependencies without needing the full Context.
 
-> **Note:** `ctx.get_dependency` + `Info::get_dependency` are in the v0.1.0 SDK source (`resonate-sdk-rs:resonate/src/context.rs:115`, `info.rs:42`) but not yet covered in `docs/develop/rust.mdx` as of April 2026. Rust-skill review discovered the docs lag; the API is real.
+> **Note:** `ctx.get_dependency` + `Info::get_dependency` are in the v0.6.0 SDK source (`resonate-sdk-rs:resonate/src/context.rs:115`, `info.rs:42`) but not yet covered in `docs/develop/rust.mdx`. Rust-skill review discovered the docs lag; the API is real.
 
 ## Human-in-the-loop: `ctx.promise::<T>()`
 
@@ -238,7 +236,7 @@ From outside the worker, resolve it with the ephemeral-world `resonate.promises.
 
 For the deep HITL pattern (multi-approver, webhooks, SLAs), see `resonate-human-in-the-loop-pattern-rust`.
 
-> **Note:** `ctx.promise::<T>()` is in the v0.1.0 SDK source (`resonate-sdk-rs:resonate/src/context.rs:352`) with a full `PromiseTask<T>` builder (`.timeout`, `.data`, `.id`, `.create`, `.await`) but not yet covered in `docs/develop/rust.mdx` as of April 2026.
+> **Note:** `ctx.promise::<T>()` is in the v0.6.0 SDK source (`resonate-sdk-rs:resonate/src/context.rs:352`) with a full `PromiseTask<T>` builder (`.timeout`, `.data`, `.id`, `.create`, `.await`) but not yet covered in `docs/develop/rust.mdx`.
 
 ## Leaf with `&Info`
 
@@ -275,7 +273,7 @@ async fn ingest(ctx: &Context, url: String) -> Result<usize> {
 async fn enrich_batch(ctx: &Context, ids: Vec<String>) -> Result<Vec<String>> {
     let mut futures = Vec::with_capacity(ids.len());
     for id in ids {
-        futures.push(ctx.run(enrich_one, id).spawn().await?);
+        futures.push(ctx.run(enrich_one, id).spawn()?);
     }
     let mut results = Vec::with_capacity(futures.len());
     for f in futures {
@@ -301,7 +299,7 @@ async fn resilient(ctx: &Context, input: String) -> Result<String> {
 
 - **`#[resonate::function]` attribute macro** — not a higher-order function call like TS's `resonate.register`. Registration still happens ephemeral-side; the attribute just transforms the function's signature for the SDK to pick up
 - **Turbofish on `ctx.rpc::<T>`** — Rust needs the result type when it can't be inferred from the call site
-- **`.spawn().await?`** pattern for parallelism — the double-await is real: `.spawn()` returns a `DurableFuture` (which itself is a future that resolves to the DurableFuture), and then you await the `DurableFuture` later to get the `T`
+- **`.spawn()?`** is synchronous — it returns a `DurableFuture` (wrapped in `Result`, hence `?`) immediately, WITHOUT awaiting. You await that `DurableFuture` later (once) to get the `T`. There is a single await now, on the returned future — not two.
 - **`Duration::from_secs` / `from_millis` / `from_millis` / `from_micros`** — never raw numeric literals for time
 - **`Result<T>` + `?` everywhere** — idiomatic Rust propagation; matches the SDK's uniform return shape
 - **`tokio::main` runtime** — async without it requires boilerplate; every Resonate Rust app uses `#[tokio::main]` on its entry point
@@ -309,7 +307,7 @@ async fn resilient(ctx: &Context, input: String) -> Result<String> {
 
 ## Rust SDK API coverage status
 
-Honest reading of v0.1.0 as of April 2026, verified against `resonate-sdk-rs` source (not just docs):
+Honest reading of v0.6.0, verified against `resonate-sdk-rs` source (not just docs):
 
 ### In the SDK source + documented in `rust.mdx`
 - `ctx.run` / `ctx.rpc` / `ctx.sleep` with builders + `.spawn()` parallelism
@@ -323,8 +321,8 @@ Honest reading of v0.1.0 as of April 2026, verified against `resonate-sdk-rs` so
 
 Each has been verified as `pub fn` with source-level docstrings; they appear intended for users. Treat them as "supported but not yet in rust.mdx; verify signatures against `resonate-sdk-rs` at the commit you depend on."
 
-### NOT in the SDK source at v0.1.0
-- **`ctx.detached`** — no fire-and-forget; use `ctx.rpc(...).spawn().await?` and simply don't await the returned future, or start a separate RPC without `.await`
+### NOT in the SDK source at v0.6.0
+- **`ctx.detached`** — no fire-and-forget; use `ctx.rpc(...).spawn()?` and simply don't await the returned `DurableFuture`, or start a separate RPC without collecting the result
 - **`ctx.random.random()` / `ctx.time.time()`** — no deterministic randomness/time helpers. Standard Rust `SystemTime::now()` and `rand` will cause replay inconsistency. Workaround: do non-deterministic work inside a leaf so the value is checkpointed
 - **`ctx.panic()` / `ctx.assert()`** — use standard `panic!` / `assert!` (non-recoverable; retry policy sees them). For recoverable invariant checks, propagate via `Result`
 
@@ -333,6 +331,6 @@ Each of these may land in a later v0.x; write your Rust workflows around the ava
 ## Related skills
 
 - `resonate-basic-ephemeral-world-usage-rust` — Client APIs, registration, top-level invocation, promises
-- `resonate-basic-debugging-rust` — v0.1.0-specific failure modes, git-dep install, serde errors
+- `resonate-basic-debugging-rust` — Rust-specific failure modes, serde errors, spawn semantics, tokio runtime mismatches
 - `durable-execution` + `resonate-philosophy` — foundational concepts
 - `resonate-basic-durable-world-usage-typescript` + `-python` — sibling SDKs for comparison

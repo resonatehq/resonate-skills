@@ -1,12 +1,12 @@
 ---
 name: resonate-external-system-of-record-pattern-rust
-description: Maintain consistency across external systems in Rust Resonate workflows by treating one system as the source of truth and writing to it idempotently before any dependent effects. Uses type-dispatched ctx.get_dependency::<T>() for DB/client injection. Use when Resonate's durable promises coordinate writes to PostgreSQL, TigerBeetle, Stripe, or any external store with its own durability. v0.1.0 caveat: ctx.get_dependency + with_dependency are in sdk-rs source but not yet in rust.mdx.
+description: Maintain consistency across external systems in Rust Resonate workflows by treating one system as the source of truth and writing to it idempotently before any dependent effects. Uses type-dispatched ctx.get_dependency::<T>() for DB/client injection. Use when Resonate's durable promises coordinate writes to PostgreSQL, TigerBeetle, Stripe, or any external store with its own durability. Note: ctx.get_dependency + with_dependency are in the SDK (0.6.0) but not yet in rust.mdx.
 license: Apache-2.0
 ---
 
 # Resonate External System of Record Pattern — Rust
 
-> **v0.1.0 caveat.** `ctx.get_dependency::<T>()` and `resonate.with_dependency::<T>(value)` are real `pub fn`s in the Rust SDK source (`resonate-sdk-rs:resonate/src/context.rs:115`, `resonate.rs:271`) but are not yet covered in `docs/develop/rust.mdx` as of April 2026. The APIs are safe to use; cite source paths when reviewers ask.
+> **SDK note (0.6.0).** `ctx.get_dependency::<T>()` and `resonate.with_dependency::<T>(value)` are real `pub fn`s in the Rust SDK source (`resonate-sdk-rs:resonate/src/context.rs`, `resonate.rs`) but are not yet covered in `docs/develop/rust.mdx`. The APIs are safe to use; cite source paths when reviewers ask.
 
 ## Overview
 
@@ -256,7 +256,7 @@ On replay, `post_ledger_transfer` returns the stored checkpoint value — the le
 - **Type-dispatched DI**: `ctx.get_dependency::<PgPool>()` or `info.get_dependency::<Ledger>()` — no string keys. Newtype-wrap when you need multiple values of the same logical type (`struct PrimaryDb(PgPool)`, `struct AnalyticsDb(PgPool)`)
 - **`Arc<T>` return** — dependencies come back as `Arc<T>`; deref with `&*arc` when passing to query functions that take `&Pool`
 - **`sqlx::query_as` + tuple/struct derivation** — typed query results without a separate ORM
-- **`.map_err(|e| Error::from_reason(e.to_string()))`** — convert sqlx/stripe/etc. errors into Resonate's `Error` for `?` propagation. Verify the exact conversion with your SDK version; `Error::from_reason` matches master-branch v0.1.0
+- **`.map_err(|e| Error::from_reason(e.to_string()))`** — convert sqlx/stripe/etc. errors into Resonate's `Error` for `?` propagation. Verify the exact conversion with your SDK version; `Error::from_reason` matches the released 0.6.0 crate
 - **`ON CONFLICT DO NOTHING` / `ON CONFLICT DO UPDATE`** (Postgres) — natural idempotency on inserts
 - **`info: &Info` for leaves that only need DI** — skip `&Context` when the leaf doesn't orchestrate sub-tasks; signals intent (pure write) and lets the SDK optimize
 

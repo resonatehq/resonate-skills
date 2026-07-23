@@ -42,7 +42,7 @@ For pre-release work that must track `main` directly (e.g. to pick up a not-yet-
 resonate = { package = "resonate-sdk", git = "https://github.com/resonatehq/resonate-sdk-rs", branch = "main" }
 ```
 
-Run `cargo update -p resonate` to pull the latest version when upstream changes.
+Run `cargo update -p resonate-sdk` to pull the latest version when upstream changes.
 
 ## Registration errors
 
@@ -113,7 +113,7 @@ let result: String = ctx.run(leaf, "input".into()).await?;
 
 **Symptom:** compile error like "no method named `poll` found", a type-mismatch where the compiler expected `DurableFuture<T>` but got an opaque future type, or a lifetime/borrow error that only appears on the `.spawn()` line.
 
-**Cause:** As of SDK 0.5.0+, `ctx.run(...).spawn()` / `ctx.rpc(...).spawn()` on a `Context` is **synchronous** — it returns `Result<DurableFuture<T>>` directly, without suspending. Adding `.await` after `.spawn()` is an old habit that no longer compiles.
+**Cause:** As of SDK 0.5.0+, `ctx.run(...).spawn()` / `ctx.rpc(...).spawn()` on a `Context` is **synchronous** — it returns the handle directly (`ctx.run` → `Result<DurableFuture<T>>`, `ctx.rpc` → `Result<RemoteFuture<T>>`), without suspending. Adding `.await` after `.spawn()` is an old habit that no longer compiles.
 
 ```rust
 // BAD — .await after .spawn() fails to compile in 0.5.0+
@@ -260,15 +260,15 @@ The CLI is SDK-agnostic; same commands work for TS, Python, Rust worker ecosyste
 Cross-reference with `resonate-basic-durable-world-usage-rust` for the full treatment; quick summary for debug triage:
 
 ### Exists in v0.6.0 source (even if `rust.mdx` doesn't mention it)
-- `ctx.promise::<T>()` — Context-side HITL primitive (source: `resonate/src/context.rs:352`)
-- `ctx.get_dependency::<T>()` + `Info::get_dependency::<T>()` — type-dispatched DI (source: `context.rs:115`, `info.rs:42`)
+- `ctx.promise::<T>()` — Context-side HITL primitive (source: `resonate/src/context.rs:335`)
+- `ctx.get_dependency::<T>()` + `Info::get_dependency::<T>()` — type-dispatched DI (source: `context.rs:120`, `info.rs:43`)
+- `ctx.detached(func, args)` — fire-and-forget remote execution (source: `context.rs:405`); `.spawn()?` returns a `DetachedHandle`, and `handle.id().await?` gives the durable promise ID
 - `ctx.info()` returning extra accessors `branch_id`, `tags`
 - `resonate.with_dependency::<T>(value)` — ephemeral-side DI builder
 
 If a workflow is mysteriously missing one of these, the issue is likely *docs staleness*, not SDK absence. Cite source paths when an agent reviewer questions whether an API exists.
 
 ### NOT in v0.6.0 source
-- `ctx.detached` fire-and-forget — use `.spawn()?` and don't await the returned `DurableFuture`
 - `ctx.random.random()` / `ctx.time.time()` — do non-det work inside a leaf so it's checkpointed
 - `ctx.panic()` / `ctx.assert()` — use Rust's `panic!` / `assert!` (non-recoverable) or `Result` propagation (recoverable)
 

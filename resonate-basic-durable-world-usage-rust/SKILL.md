@@ -94,11 +94,11 @@ With target group + parallelism:
 ```rust
 #[resonate::function]
 async fn parallel_remote(ctx: &Context) -> Result<()> {
-    let f1 = ctx.rpc::<String>("worker-a", "data".into())
+    let f1 = ctx.rpc::<String>("worker-a", "data")
         .target("poll://any@group-a")
         .spawn()?;
 
-    let f2 = ctx.rpc::<String>("worker-b", "data".into())
+    let f2 = ctx.rpc::<String>("worker-b", "data")
         .target("poll://any@group-b")
         .spawn()?;
 
@@ -198,7 +198,7 @@ Type-dispatched: there is one dependency per type per `Resonate` instance. For m
 
 `&Info` also exposes `get_dependency::<T>()`, so a leaf that takes `info: &Info` as its first parameter can access dependencies without needing the full Context.
 
-> **Note:** `ctx.get_dependency` + `Info::get_dependency` are in the v0.6.0 SDK source (`resonate-sdk-rs:resonate/src/context.rs:115`, `info.rs:42`) but not yet covered in `docs/develop/rust.mdx`. Rust-skill review discovered the docs lag; the API is real.
+> **Note:** `ctx.get_dependency` + `Info::get_dependency` are in the v0.6.0 SDK source (`resonate-sdk-rs:resonate/src/context.rs:120`, `info.rs:43`) but not yet covered in `docs/develop/rust.mdx`. Rust-skill review discovered the docs lag; the API is real.
 
 ## Human-in-the-loop: `ctx.promise::<T>()`
 
@@ -236,7 +236,7 @@ From outside the worker, resolve it with the ephemeral-world `resonate.promises.
 
 For the deep HITL pattern (multi-approver, webhooks, SLAs), see `resonate-human-in-the-loop-pattern-rust`.
 
-> **Note:** `ctx.promise::<T>()` is in the v0.6.0 SDK source (`resonate-sdk-rs:resonate/src/context.rs:352`) with a full `PromiseTask<T>` builder (`.timeout`, `.data`, `.id`, `.create`, `.await`) but not yet covered in `docs/develop/rust.mdx`.
+> **Note:** `ctx.promise::<T>()` is in the v0.6.0 SDK source (`resonate-sdk-rs:resonate/src/context.rs:335`) with a full `PromiseTask<T>` builder (`.timeout`, `.data`, `.create`) but not yet covered in `docs/develop/rust.mdx`.
 
 ## Leaf with `&Info`
 
@@ -315,14 +315,14 @@ Honest reading of v0.6.0, verified against `resonate-sdk-rs` source (not just do
 - `Info` accessors on leaf-with-info functions
 
 ### In the SDK source BUT not in `rust.mdx` (safe to use; docs lag)
-- **`ctx.promise::<T>()`** — Context-side HITL primitive with `PromiseTask<T>` builder (`.timeout`, `.data`, `.id`, `.create`, `.await`). Fully featured; discovered in post-session audit against `resonate/src/context.rs:352`
+- **`ctx.promise::<T>()`** — Context-side HITL primitive with `PromiseTask<T>` builder (`.timeout`, `.data`, `.id`, `.create`, `.await`). Fully featured; discovered in post-session audit against `resonate/src/context.rs:335`
 - **`ctx.get_dependency::<T>()`** — type-dispatched DI. Panics if not registered. `Info::get_dependency` is the same shape on leaves
 - **`ctx.info()`** — returns an `Info` snapshot with extra accessors (`branch_id()`, `tags()`)
+- **`ctx.detached(func, args)`** — fire-and-forget remote execution (`context.rs:405`). `.spawn()?` returns a `DetachedHandle`; call `handle.id().await?` for the durable promise ID. Does not return the callee's result
 
 Each has been verified as `pub fn` with source-level docstrings; they appear intended for users. Treat them as "supported but not yet in rust.mdx; verify signatures against `resonate-sdk-rs` at the commit you depend on."
 
 ### NOT in the SDK source at v0.6.0
-- **`ctx.detached`** — no fire-and-forget; use `ctx.rpc(...).spawn()?` and simply don't await the returned `DurableFuture`, or start a separate RPC without collecting the result
 - **`ctx.random.random()` / `ctx.time.time()`** — no deterministic randomness/time helpers. Standard Rust `SystemTime::now()` and `rand` will cause replay inconsistency. Workaround: do non-deterministic work inside a leaf so the value is checkpointed
 - **`ctx.panic()` / `ctx.assert()`** — use standard `panic!` / `assert!` (non-recoverable; retry policy sees them). For recoverable invariant checks, propagate via `Result`
 

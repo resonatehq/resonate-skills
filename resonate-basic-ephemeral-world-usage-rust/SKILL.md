@@ -144,7 +144,7 @@ async fn charge_card(ctx: &Context, order_id: String) -> Result<()> {
 
 Type-dispatched DI means you can only have one dependency per type per `Resonate` instance; for multiple values of the same logical type, wrap them in distinct newtypes (`struct PrimaryDb(PgPool)` vs `struct AnalyticsDb(PgPool)`).
 
-> **Note:** `with_dependency` is a pub fn on `Resonate` in the v0.6.0 SDK source (`resonate-sdk-rs:resonate/src/resonate.rs:271`) but not mentioned in `docs/develop/rust.mdx`. Use with the understanding that docs lag source here.
+> **Note:** `with_dependency` is a pub fn on `Resonate` in the v0.6.0 SDK source (`resonate-sdk-rs:resonate/src/resonate.rs:284`) but not mentioned in `docs/develop/rust.mdx`. Use with the understanding that docs lag source here.
 
 ## Register
 
@@ -317,11 +317,11 @@ Honest reading of v0.6.0, verified against `resonate-sdk-rs` source (not just do
 - `ctx.get_dependency::<T>()` — durable-side DI (see `resonate-basic-durable-world-usage-rust`)
 - `ctx.promise::<T>()` — Context-side HITL primitive (see `resonate-basic-durable-world-usage-rust` + `resonate-human-in-the-loop-pattern-rust`)
 - `ctx.info()` — returns an `Info` struct with extra accessors `branch_id` and `tags`
+- `ctx.detached(func, args)` — Context-side fire-and-forget remote execution (`context.rs:405`); `.spawn()?` returns a `DetachedHandle` (see `resonate-basic-durable-world-usage-rust`)
 
-These are `pub fn` with docstring-level examples in the source; they appear intended for users, just not yet covered by the docs. Until `rust.mdx` catches up, cite the source path (e.g., `resonate/src/context.rs:115`) when reviewers question whether the API exists.
+These are `pub fn` with docstring-level examples in the source; they appear intended for users, just not yet covered by the docs. Until `rust.mdx` catches up, cite the source path (e.g., `resonate/src/context.rs:120`) when reviewers question whether the API exists.
 
 ### NOT in the SDK source at v0.6.0
-- `ctx.detached` — fire-and-forget; parallelism is via `.spawn()` instead
 - `ctx.random.random()` / `ctx.time.time()` — no deterministic time/random helpers
 - `ctx.panic()` / `ctx.assert()` — use Rust's own `panic!`/`assert!` + `Result` propagation
 

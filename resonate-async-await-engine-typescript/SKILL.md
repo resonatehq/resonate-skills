@@ -6,7 +6,7 @@ license: Apache-2.0
 
 # Resonate Async/Await Engine (TypeScript)
 
-> **SDK version:** This skill reflects `@resonatehq/sdk` v0.11.2 (current on npm). The async/await engine was introduced in v0.11.0.
+> **SDK version:** This skill reflects `@resonatehq/sdk` v0.11.4 (current on npm). The async/await engine was introduced in v0.11.0.
 
 ## Overview
 
@@ -39,7 +39,7 @@ For the generator engine, see `resonate-basic-ephemeral-world-usage-typescript` 
 ## Installation
 
 ```bash
-npm install @resonatehq/sdk@0.11.2
+npm install @resonatehq/sdk@0.11.4
 ```
 
 Both engines are in the same package. The generator engine is the default export; the async engine is the `/async` sub-export.

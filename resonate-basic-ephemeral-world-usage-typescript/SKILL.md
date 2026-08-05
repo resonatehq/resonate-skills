@@ -1,12 +1,12 @@
 ---
 name: resonate-basic-ephemeral-world-usage-typescript
-description: Core patterns for using Resonate Client APIs in the Ephemeral World - initialization, registration, top-level invocations, promise management, and dependency injection. Use this for application entry points and orchestration code outside of durable functions.
+description: Core patterns for using Resonate Client APIs in the Ephemeral World - initialization, registration, top-level invocations, promise management, and dependency injection. Covers connecting to a Resonate Server, running on Postgres with no server process (PostgresNetwork), and token authentication - the constructor takes `token`, not `auth`, and silently ignores unknown options. Use this for application entry points and orchestration code outside of durable functions.
 license: Apache-2.0
 ---
 
 # Resonate Basic Ephemeral World Usage
 
-> **SDK version:** This skill reflects `@resonatehq/sdk` v0.11.2 (current on npm).
+> **SDK version:** This skill reflects `@resonatehq/sdk` v0.11.4 (current on npm).
 >
 > **Two execution engines (v0.11.0+):** The SDK now ships two engines. This skill documents the **generator engine** (imported from `@resonatehq/sdk`), which uses `function*` / `yield*` and is the basis of all existing Resonate examples. An **async/await engine** (imported from `@resonatehq/sdk/async`) was added in v0.11.0 and is documented in `resonate-async-await-engine-typescript`.
 
@@ -76,10 +76,7 @@ import { Resonate } from "@resonatehq/sdk";
 const resonate = new Resonate({
   url: "http://localhost:8001",
   group: "workers",
-  auth: {
-    username: "user",
-    password: "pass"
-  }
+  token: process.env.RESONATE_TOKEN, // JWT bearer token, if the server is secured
 });
 ```
 
@@ -89,12 +86,35 @@ const resonate = new Resonate({
 - Distributed execution
 - Production deployments
 
+> **There is no basic-auth option on current releases.** The constructor accepts `token` (a JWT bearer token) and nothing else auth-related — there is no `auth`, `username`, or `password` field, and no `RESONATE_USERNAME` / `RESONATE_PASSWORD` environment variable. Passing an unknown option does **not** throw, so credentials handed to a field that does not exist are silently dropped and the client sends unauthenticated requests.
+>
+> Basic auth did exist through `0.9.6`, where `auth: { username, password }` sent an `Authorization: Basic` header that the server of that era validated. The `0.10.0` networking rewrite removed it with no deprecation warning. If you are upgrading from `0.9.x`, a working `auth` block does not fail loudly — it stops authenticating.
+
+### Postgres Instead of a Server
+
+The SDK can also run durable execution directly on Postgres, with no Resonate Server process. Apply the `resonate.sql` schema from [resonate-pg](https://github.com/resonatehq/resonate-pg) to a Postgres 16+ database, install the `pg` peer dependency, and pass a `PostgresNetwork` as the `network` option:
+
+```ts
+import { Resonate } from "@resonatehq/sdk";
+import { PostgresNetwork } from "@resonatehq/sdk/postgres";
+
+const network = new PostgresNetwork({
+  connectionString: process.env.DATABASE_URL ?? "postgres://localhost:5432/mydb",
+  group: "workers",
+});
+
+const resonate = new Resonate({ network });
+```
+
+Works with both engines — pass the same `network` to the `Resonate` class from `@resonatehq/sdk/async`.
+
+**Key behavior to know:** with no server process, due timers are advanced by the workers themselves. Durable sleeps and timeouts progress only while at least one worker is connected; with every worker down they suspend until one reconnects.
+
 ### Environment Variables
 
 ```bash
 export RESONATE_URL="http://localhost:8001"
-export RESONATE_USERNAME="user"
-export RESONATE_PASSWORD="pass"
+export RESONATE_TOKEN="<jwt>"
 ```
 
 ```ts
@@ -281,7 +301,7 @@ await resonate.promises.reject("approval-123", {
 await resonate.promises.cancel("approval-123");
 ```
 
-> **Migration note (v0.10.0 → v0.10.1+):** The single `resonate.promises.settle(id, state, value)` method was split into `resolve`, `reject`, and `cancel` in v0.10.1. The old `settle()` is private in v0.10.2 and remains private in v0.11.2. Update any code that calls `.settle()` directly.
+> **Migration note (v0.10.0 → v0.10.1+):** The single `resonate.promises.settle(id, state, value)` method was split into `resolve`, `reject`, and `cancel` in v0.10.1. The old `settle()` is private in v0.10.2 and remains private in v0.11.4. Update any code that calls `.settle()` directly.
 
 ## Dependency Injection
 

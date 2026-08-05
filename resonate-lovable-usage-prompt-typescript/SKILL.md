@@ -6,7 +6,7 @@ license: Apache-2.0
 
 # Resonate Lovable Usage Prompt — TypeScript
 
-> **SDK version:** This skill reflects `@resonatehq/sdk` v0.11.2 (current on npm).
+> **SDK version:** This skill reflects `@resonatehq/sdk` v0.11.4 (current on npm).
 
 ## Overview
 

@@ -117,7 +117,7 @@ curl -s -X POST http://localhost:8001 \
 
 ### 401 Unauthorized
 
-- **No token:** Add `auth: { token: "..." }` to Resonate constructor
+- **No token:** Add `token: "..."` to the Resonate constructor — a top-level option, not nested under `auth`. An unknown option is silently ignored, so a nested `auth` object produces no error and no credentials.
 - **Expired token:** Regenerate with `jwt encode --secret @private_key.pem -A RS256 --exp='+90 days' '{"prefix":""}'`
 - **Wrong key:** Token was signed with a different private key than the server's public key
 

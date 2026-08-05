@@ -2,6 +2,9 @@
 
 TypeScript SDK for the Resonate wire protocol. Zero external dependencies.
 
+> [!WARNING]
+> **This reference is out of date and should not be copied from.** It was written against `@resonatehq/sdk` v0.10.2 and documents a client API that the current release does not have. Known to be wrong on 0.11.4: `invoke()` and `start()` are not methods on the class (use `resonate.run(id, funcOrName, ...args)`); the constructor takes neither `auth` nor `processId` nor `heartbeatInterval` (it takes `token`, `pid`, and `ttl`, and `ttl` is in seconds, not milliseconds); and the async/await engine shipped in 0.11.0 is absent here entirely. For anything you intend to run, use `resonate-basic-ephemeral-world-usage-typescript` and `resonate-basic-durable-world-usage-typescript`, which are verified against the current release.
+
 > **This is the TypeScript SDK reference** (`@resonatehq/sdk` v0.10.2). Python, Rust, and Go users: see the per-SDK skills (`resonate-basic-ephemeral-world-usage-{python,rust,go}` and `resonate-basic-durable-world-usage-{python,rust,go}`) for idiomatic syntax in your language.
 
 **Package:** `@resonatehq/sdk`
@@ -54,6 +57,9 @@ resonate.register("processOrder", function* (ctx: Context, orderId: string) {
 **`stop()`** — Stop the worker. Aborts SSE, sends final empty heartbeat. Graceful shutdown.
 
 **`invoke(name, args, options?)`** — Dispatch a workflow and wait for the result.
+
+> [!WARNING]
+> **`invoke` does not exist on the current release.** `typeof resonate.invoke === "undefined"` on 0.11.4, and calling it throws `TypeError: r.invoke is not a function`. The current equivalent is `resonate.run(id, funcOrName, ...args)`. The fence below is retained only to describe the older shape — do not run it.
 
 ```typescript
 const result = await resonate.invoke("processOrder", ["order-123"], {

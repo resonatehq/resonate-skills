@@ -57,7 +57,7 @@ Every skill falls into one of two categories.
 ### Per-SDK: TypeScript
 
 **Core SDK usage:**
-- [`resonate-basic-ephemeral-world-usage-typescript`](resonate-basic-ephemeral-world-usage-typescript/SKILL.md) — Client APIs: initialization, registration, top-level invocations.
+- [`resonate-basic-ephemeral-world-usage-typescript`](resonate-basic-ephemeral-world-usage-typescript/SKILL.md) — Client APIs: initialization, registration, top-level invocations, Postgres-backed setup, and token auth.
 - [`resonate-basic-durable-world-usage-typescript`](resonate-basic-durable-world-usage-typescript/SKILL.md) — Context APIs inside `function*` bodies.
 - [`resonate-async-await-engine-typescript`](resonate-async-await-engine-typescript/SKILL.md) — Async/await execution engine (`@resonatehq/sdk/async`): `async function` workflows, eager `ctx.run` fan-out, `Never`-default retries, `ctx.promise` for HITL, and when to choose async vs generator engine. v0.11.0+.
 - [`resonate-basic-debugging-typescript`](resonate-basic-debugging-typescript/SKILL.md) — Investigating stuck workflows, error codes, unexpected replays.

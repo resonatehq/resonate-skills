@@ -201,7 +201,7 @@ docker run -v /path/to/public_key.pem:/etc/resonate/public_key.pem:ro \
 ```typescript
 const resonate = new Resonate({
   url: "https://resonate.example.com",
-  auth: { token: process.env.RESONATE_TOKEN! },
+  token: process.env.RESONATE_TOKEN!,
 });
 ```
 

@@ -1,6 +1,6 @@
 ---
 name: resonate-basic-ephemeral-world-usage-typescript
-description: Core patterns for using Resonate Client APIs in the Ephemeral World - initialization, registration, top-level invocations, promise management, and dependency injection. Use this for application entry points and orchestration code outside of durable functions.
+description: Core patterns for using Resonate Client APIs in the Ephemeral World - initialization, registration, top-level invocations, promise management, and dependency injection. Covers connecting to a Resonate Server, running on Postgres with no server process (PostgresNetwork), and token authentication - the constructor takes `token`, not `auth`, and silently ignores unknown options. Use this for application entry points and orchestration code outside of durable functions.
 license: Apache-2.0
 ---
 
@@ -86,7 +86,9 @@ const resonate = new Resonate({
 - Distributed execution
 - Production deployments
 
-> **There is no basic-auth option.** The constructor accepts `token` (a JWT bearer token) and nothing else auth-related — there is no `auth`, `username`, or `password` field, and no `RESONATE_USERNAME` / `RESONATE_PASSWORD` environment variable. Passing an unknown option does **not** throw, so credentials handed to a field that does not exist are silently dropped and the client sends unauthenticated requests.
+> **There is no basic-auth option on current releases.** The constructor accepts `token` (a JWT bearer token) and nothing else auth-related — there is no `auth`, `username`, or `password` field, and no `RESONATE_USERNAME` / `RESONATE_PASSWORD` environment variable. Passing an unknown option does **not** throw, so credentials handed to a field that does not exist are silently dropped and the client sends unauthenticated requests.
+>
+> Basic auth did exist through `0.9.6`, where `auth: { username, password }` sent an `Authorization: Basic` header that the server of that era validated. The `0.10.0` networking rewrite removed it with no deprecation warning. If you are upgrading from `0.9.x`, a working `auth` block does not fail loudly — it stops authenticating.
 
 ### Postgres Instead of a Server
 

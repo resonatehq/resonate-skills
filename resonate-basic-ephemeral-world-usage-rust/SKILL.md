@@ -1,12 +1,12 @@
 ---
 name: resonate-basic-ephemeral-world-usage-rust
-description: Core patterns for using the Resonate Rust SDK's Client APIs from the ephemeral world — initializing, registering durable functions with the #[resonate::function] attribute, invoking them top-level (run / rpc / schedule), getting handles, and managing external promises. Use when writing any Rust binary or process-level code that needs to launch or coordinate Resonate workflows. v0.1.0 caveat: APIs may change between releases.
+description: Core patterns for using the Resonate Rust SDK's Client APIs from the ephemeral world — initializing, registering durable functions with the #[resonate::function] attribute, invoking them top-level (run / rpc / schedule), getting handles, and managing external promises. Use when writing any Rust binary or process-level code that needs to launch or coordinate Resonate workflows. SDK in active development; APIs may change between releases.
 license: Apache-2.0
 ---
 
 # Resonate Basic Ephemeral World Usage — Rust
 
-> **v0.1.0 caveat.** The Resonate Rust SDK is in active development. It is NOT yet published on crates.io; install as a git dependency. APIs may change between releases. Treat every code example as a moving target until the SDK reaches 1.0.
+> **SDK note.** The Resonate Rust SDK is in active development (`resonate-sdk` v0.6.0, published on crates.io). APIs may change between releases. Treat every code example as a moving target until the SDK reaches 1.0.
 
 ## Overview
 
@@ -16,11 +16,11 @@ This skill covers the Client API surface. The Durable World (Context APIs inside
 
 ## Install
 
-The Rust SDK is a git dependency (v0.1.0; not on crates.io yet):
+The Rust SDK is published on crates.io. Add to your `Cargo.toml`:
 
 ```toml title="Cargo.toml"
 [dependencies]
-resonate = { git = "https://github.com/resonatehq/resonate-sdk-rs", branch = "master" }
+resonate = { package = "resonate-sdk", version = "0.6" }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 ```
@@ -144,7 +144,7 @@ async fn charge_card(ctx: &Context, order_id: String) -> Result<()> {
 
 Type-dispatched DI means you can only have one dependency per type per `Resonate` instance; for multiple values of the same logical type, wrap them in distinct newtypes (`struct PrimaryDb(PgPool)` vs `struct AnalyticsDb(PgPool)`).
 
-> **Note:** `with_dependency` is a pub fn on `Resonate` in the v0.1.0 SDK source (`resonate-sdk-rs:resonate/src/resonate.rs:271`) but not mentioned in `docs/develop/rust.mdx` as of April 2026. Use with the understanding that docs lag source here.
+> **Note:** `with_dependency` is a pub fn on `Resonate` in the v0.6.0 SDK source (`resonate-sdk-rs:resonate/src/resonate.rs:284`) but not mentioned in `docs/develop/rust.mdx`. Use with the understanding that docs lag source here.
 
 ## Register
 
@@ -187,7 +187,7 @@ let result: String = resonate
 
 ```rust
 let result: String = resonate
-    .rpc("invocation-id", "process_order", "order-123".into())
+    .rpc("invocation-id", "process_order", "order-123")
     .target("poll://any@workers")
     .await?;
 ```
@@ -200,14 +200,14 @@ The Rust SDK has first-class cron scheduling:
 
 ```rust
 let schedule = resonate
-    .schedule("daily-reconciliation", "0 2 * * *", "reconcile", "2026-04-16".into())
+    .schedule("daily-reconciliation", "0 2 * * *", "reconcile", "2026-04-16")
     .await?;
 
 // ...later, to delete:
 schedule.delete().await?;
 ```
 
-(Python SDK does not expose a top-level `.schedule(...)` at v0.6.7; Rust does at v0.1.0. Cross-SDK parity is not yet achieved — see Related notes below.)
+(Python SDK does not expose a top-level `.schedule(...)` at v0.6.7; Rust does at v0.6.0. Cross-SDK parity is not yet achieved — see Related notes below.)
 
 ### Subscribe to an existing invocation
 
@@ -303,12 +303,12 @@ async fn load_order(order_id: String) -> Result<String> {
 
 ## Rust SDK API coverage status
 
-Honest reading of v0.1.0 as of April 2026, verified against `resonate-sdk-rs` source (not just docs):
+Honest reading of v0.6.0, verified against `resonate-sdk-rs` source (not just docs):
 
 ### In the SDK source + documented in `rust.mdx`
 - `Resonate::new/local`, `.register/run/rpc/schedule/get/stop/promises.*`
 - `#[resonate::function]` macro + 3 function kinds (Workflow / Leaf with Info / Pure leaf)
-- `ctx.run/rpc/sleep` + `.spawn()` double-await pattern
+- `ctx.run/rpc/sleep` + `.spawn()?` (synchronous spawn) then await the returned `DurableFuture`
 - Context accessors `ctx.id/parent_id/origin_id/func_name/timeout_at`
 - Builder options `.timeout(Duration)`, `.target(&str)` (context), `.version/.tags` (ephemeral)
 
@@ -317,19 +317,19 @@ Honest reading of v0.1.0 as of April 2026, verified against `resonate-sdk-rs` so
 - `ctx.get_dependency::<T>()` — durable-side DI (see `resonate-basic-durable-world-usage-rust`)
 - `ctx.promise::<T>()` — Context-side HITL primitive (see `resonate-basic-durable-world-usage-rust` + `resonate-human-in-the-loop-pattern-rust`)
 - `ctx.info()` — returns an `Info` struct with extra accessors `branch_id` and `tags`
+- `ctx.detached(func, args)` — Context-side fire-and-forget remote execution (`context.rs:405`); `.spawn()?` returns a `DetachedHandle` (see `resonate-basic-durable-world-usage-rust`)
 
-These are `pub fn` with docstring-level examples in the source; they appear intended for users, just not yet covered by the docs. Until `rust.mdx` catches up, cite the source path (e.g., `resonate/src/context.rs:115`) when reviewers question whether the API exists.
+These are `pub fn` with docstring-level examples in the source; they appear intended for users, just not yet covered by the docs. Until `rust.mdx` catches up, cite the source path (e.g., `resonate/src/context.rs:120`) when reviewers question whether the API exists.
 
-### NOT in the SDK source at v0.1.0
-- `ctx.detached` — fire-and-forget; parallelism is via `.spawn()` instead
+### NOT in the SDK source at v0.6.0
 - `ctx.random.random()` / `ctx.time.time()` — no deterministic time/random helpers
 - `ctx.panic()` / `ctx.assert()` — use Rust's own `panic!`/`assert!` + `Result` propagation
 
-Treat the last three as "may land in future versions; verify when v0.2.0+ ships."
+Treat the last three as "may land in a future release; check `docs/develop/rust.mdx` and the `resonate-sdk-rs` source when a new version ships."
 
 ## Related skills
 
 - `resonate-basic-durable-world-usage-rust` — Context APIs, `#[resonate::function]` mechanics, `.spawn()` for parallelism, builder options
-- `resonate-basic-debugging-rust` — Rust-specific failure modes: v0.1.0 caveat, git-dep install issues, serde errors, `Result<T>` handling
+- `resonate-basic-debugging-rust` — Rust-specific failure modes: serde errors, spawn semantics, `Result<T>` handling, tokio runtime mismatches
 - `durable-execution` + `resonate-philosophy` — foundational concepts; read these first if new to Resonate
 - `resonate-basic-ephemeral-world-usage-typescript` + `-python` — sibling SDKs' ephemeral-world surfaces for comparison

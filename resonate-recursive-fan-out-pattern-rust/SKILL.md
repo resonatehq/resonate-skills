@@ -1,12 +1,12 @@
 ---
 name: resonate-recursive-fan-out-pattern-rust
-description: Implement recursive fan-out in Rust with Resonate — spawn N sub-workflows via .spawn(), optionally recurse deeper, collect results with per-future .await. Use when processing a batch, tree, or crawl where each child is independently durable. v0.1.0 caveat: API surface may change between Rust SDK releases.
+description: Implement recursive fan-out in Rust with Resonate — spawn N sub-workflows via .spawn(), optionally recurse deeper, collect results with per-future .await. Use when processing a batch, tree, or crawl where each child is independently durable. SDK in active development; API surface may change between releases.
 license: Apache-2.0
 ---
 
 # Resonate Recursive Fan-Out Pattern — Rust
 
-> **v0.1.0 caveat.** The Rust SDK is in active development. This pattern uses only documented v0.1.0 surface (`ctx.run().spawn()`, `ctx.rpc().spawn()`, `.await?`). Verify against current SDK source before shipping.
+> **SDK note.** The Rust SDK is in active development (v0.6.0, on crates.io). This pattern uses `ctx.run().spawn()` and `ctx.rpc().spawn()` — both synchronous as of 0.5.0+. Verify against current SDK source before shipping.
 
 ## Overview
 
@@ -32,7 +32,7 @@ async fn enrich_batch(ctx: &Context, order_ids: Vec<String>) -> Result<Vec<Strin
 
     // fire off N children in parallel
     for id in order_ids {
-        let fut = ctx.run(enrich_one, id).spawn().await?;
+        let fut = ctx.run(enrich_one, id).spawn()?;
         futures.push(fut);
     }
 
@@ -63,8 +63,7 @@ async fn parallel_enrich(ctx: &Context, ids: Vec<String>) -> Result<Vec<String>>
         let fut = ctx
             .rpc::<String>("enrich_one", id)
             .target("poll://any@enrichment-workers")
-            .spawn()
-            .await?;
+            .spawn()?;
         futures.push(fut);
     }
     let mut results = Vec::with_capacity(futures.len());
@@ -113,7 +112,7 @@ async fn crawl(ctx: &Context, input: CrawlInput) -> Result<CrawlOutput> {
     let mut futures = Vec::with_capacity(links.len());
     for link in &links {
         let sub = CrawlInput { url: link.clone(), depth: input.depth - 1 };
-        let fut = ctx.rpc::<CrawlOutput>("crawl", sub).spawn().await?;
+        let fut = ctx.rpc::<CrawlOutput>("crawl", sub).spawn()?;
         futures.push(fut);
     }
 
@@ -147,7 +146,7 @@ async fn process_bounded(
     for chunk in items.chunks(concurrency) {
         let mut futures = Vec::with_capacity(chunk.len());
         for item in chunk {
-            let fut = ctx.run(process_one, item.clone()).spawn().await?;
+            let fut = ctx.run(process_one, item.clone()).spawn()?;
             futures.push(fut);
         }
         for f in futures {
@@ -175,7 +174,7 @@ By default, a `?` on `.await?` bubbles the first child error up. To tolerate ind
 async fn enrich_tolerant(ctx: &Context, ids: Vec<String>) -> Result<Vec<std::result::Result<String, String>>> {
     let mut futures = Vec::with_capacity(ids.len());
     for id in ids {
-        let fut = ctx.run(enrich_one, id).spawn().await?;
+        let fut = ctx.run(enrich_one, id).spawn()?;
         futures.push(fut);
     }
     let mut out = Vec::with_capacity(futures.len());
@@ -193,7 +192,7 @@ async fn enrich_tolerant(ctx: &Context, ids: Vec<String>) -> Result<Vec<std::res
 
 ## Distinct Rust idioms
 
-- **`.spawn().await?`** — double-await is intentional: first await starts the spawn; second await on the returned `DurableFuture` gets the actual `T`
+- **`.spawn()?`** — synchronous: returns `Result<DurableFuture<T>>` immediately (no await needed); unwrap with `?`, then await the `DurableFuture` later to get the actual `T`
 - **`Vec::with_capacity(n)`** — idiomatic capacity pre-allocation for known-size collections
 - **`.chunks(n)` slice method** — bounded parallelism cleaner than iterator fiddling
 - **Turbofish `ctx.rpc::<T>(...)`** — needed when the return type isn't inferable from context

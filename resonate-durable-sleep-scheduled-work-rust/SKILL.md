@@ -1,12 +1,12 @@
 ---
 name: resonate-durable-sleep-scheduled-work-rust
-description: Implement durable sleep and cron-scheduled work in Rust with Resonate — ctx.sleep(Duration) inside workflows for timers/countdowns/reminders, resonate.schedule() from the ephemeral world for cron-style recurring invocations. Use when a workflow must wait for hours or days, or when a function should run on a fixed schedule. v0.1.0 caveat: API surface may change between Rust SDK releases.
+description: Implement durable sleep and cron-scheduled work in Rust with Resonate — ctx.sleep(Duration) inside workflows for timers/countdowns/reminders, resonate.schedule() from the ephemeral world for cron-style recurring invocations. Use when a workflow must wait for hours or days, or when a function should run on a fixed schedule. SDK in active development (0.6.0 on crates.io); API surface may change between releases.
 license: Apache-2.0
 ---
 
 # Resonate Durable Sleep + Scheduled Work — Rust
 
-> **v0.1.0 caveat.** The Rust SDK is in active development. This skill covers two features documented in v0.1.0: `ctx.sleep(Duration)` for in-workflow durable sleep, and `resonate.schedule(name, cron, fn, input)` for cron-registered ephemeral-world scheduling. (Note: the Python SDK does not yet expose a top-level `schedule()`; Rust does.)
+> **SDK note (0.6.0).** The Rust SDK is in active development. This skill covers two features in the current release: `ctx.sleep(Duration)` for in-workflow durable sleep, and `resonate.schedule(name, cron, fn, input)` for cron-registered ephemeral-world scheduling. (Note: the Python SDK does not yet expose a top-level `schedule()`; Rust does.)
 
 ## Overview
 
@@ -177,7 +177,7 @@ async fn daily_digest(ctx: &Context, _input: serde_json::Value) -> Result<()> {
 - **`tokio::signal::ctrl_c().await`** for graceful-shutdown waits in the ephemeral-world binary
 - **`serde_json::json!({ ... })`** for structured schedule input
 - **`Schedule::delete().await?`** — the handle from `resonate.schedule(...)` is the delete API
-- **Cross-SDK asymmetry:** Python's v0.6.7 SDK has no equivalent `resonate.schedule(...)`; Rust has it at v0.1.0. TypeScript has it. If you're porting a scheduled workflow across SDKs, this asymmetry is load-bearing
+- **Cross-SDK asymmetry:** Python's v0.6.7 SDK has no equivalent `resonate.schedule(...)`; Rust has it (0.6.0). TypeScript has it. If you're porting a scheduled workflow across SDKs, this asymmetry is load-bearing
 
 ## Avoid
 

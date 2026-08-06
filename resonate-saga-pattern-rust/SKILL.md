@@ -1,12 +1,12 @@
 ---
 name: resonate-saga-pattern-rust
-description: Implement saga patterns for distributed transactions in Rust with Resonate — forward steps with compensating actions that unwind on failure using Result<T> and match-based compensation dispatch. Use when coordinating multi-step Rust workflows that need consistency across failures. v0.1.0 caveat: API surface may change between Rust SDK releases.
+description: Implement saga patterns for distributed transactions in Rust with Resonate — forward steps with compensating actions that unwind on failure using Result<T> and match-based compensation dispatch. Use when coordinating multi-step Rust workflows that need consistency across failures. SDK in active development (0.6.0 on crates.io); API surface may change between releases.
 license: Apache-2.0
 ---
 
 # Resonate Saga Pattern — Rust
 
-> **v0.1.0 caveat.** The Rust SDK is in active development. The saga pattern below uses only documented v0.1.0 surface (`ctx.run`, `Result<T>`, `?` propagation). Verify against the current SDK source before shipping.
+> **SDK note (0.6.0).** The Rust SDK is in active development. The saga pattern below uses only documented surface (`ctx.run`, `Result<T>`, `?` propagation). Verify against the current SDK source before shipping.
 
 ## Overview
 
@@ -154,7 +154,7 @@ For large sets of dynamic steps, prefer `Vec<Box<dyn StepTrait>>` — but that a
 
 ## Avoid
 
-- Panicking inside a durable function (`panic!`, `unreachable!`, `assert!`) — panics in v0.1.0 don't compensate; use `Result` explicitly
+- Panicking inside a durable function (`panic!`, `unreachable!`, `assert!`) — panics don't compensate; use `Result` explicitly
 - Non-idempotent compensations — each compensation may retry
 - Compensations that read the SoR without a fresh `ctx.run` — the read happens inside a leaf for checkpointing
 

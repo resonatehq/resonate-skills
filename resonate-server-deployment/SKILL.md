@@ -64,8 +64,10 @@ Flags:
   --server-url string           Public URL for the server (included in response headers)
   --server-port int             HTTP API port (default 8001)
   --auth-publickey string       Path to JWT public key for authentication
-  --storage-type string         Storage backend: sqlite or postgres (default sqlite)
+  --storage-type string         Storage backend: sqlite, postgres, or mysql (default sqlite)
   --storage-postgres-url string PostgreSQL connection URL
+  --storage-mysql-url string    MySQL connection URL
+  --storage-mysql-pool-size int MySQL connection pool size (default 10)
 ```
 
 All flags are also settable via `RESONATE_`-prefixed environment variables with `__` for nesting, e.g. `RESONATE_SERVER__URL`, `RESONATE_AUTH__PUBLICKEY`, `RESONATE_STORAGE__POSTGRES__URL`.

@@ -103,7 +103,7 @@ Loop **until `$RESONATE_PROMISE_TIMEOUT_AT`**, not for a fixed duration. That's 
 
 ```bash
 brew install resonatehq/tap/resonate
-resonate --version   # expect 0.9.7 or newer
+resonate --version   # expect 0.9.8 or newer
 ```
 
 A single binary serves both as the server (`resonate dev` / `resonate serve`) and as the MCP shim Claude talks to (`resonate mcp`).

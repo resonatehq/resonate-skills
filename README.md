@@ -46,7 +46,7 @@ Every skill falls into one of two categories.
 - [`resonate-migrate-from-dbos`](resonate-migrate-from-dbos/SKILL.md) — Coming from DBOS? Port your app pattern by pattern; maps `dbos-inc` examples (demo apps + the SDK repos) to Resonate equivalents across all four SDKs, with per-SDK API notes and honest coverage gaps.
 
 **Operations:**
-- [`resonate-cli`](resonate-cli/SKILL.md) — Drive the Resonate server from the shell: `serve`/`dev`, promise CRUD + search, schedules, `invoke`, `tree`, tasks, and the MCP shim. Covers every subcommand and flag as of `resonate 0.9.7`, plus the small set of docs-vs-binary deltas an agent will trip on.
+- [`resonate-cli`](resonate-cli/SKILL.md) — Drive the Resonate server from the shell: `serve`/`dev`, promise CRUD + search, schedules, `invoke`, `tree`, tasks, and the MCP shim. Covers every subcommand and flag as of `resonate 0.9.8`, plus the small set of docs-vs-binary deltas an agent will trip on.
 - [`resonate-server-deployment`](resonate-server-deployment/SKILL.md) — Install and configure the Resonate server on Linux with systemd.
 - [`resonate-server-deployment-cloud-run`](resonate-server-deployment-cloud-run/SKILL.md) — Deploy the Resonate server to Google Cloud Run with Cloud SQL Postgres storage.
 - [`resonate-server-scylladb`](resonate-server-scylladb/SKILL.md) — Run the protocol on ScyllaDB via `resonate-on-scylladb`, a separate Go server rather than a backend of the core server. Its own `SCYLLADB_`/`SERVER_` env model (not `RESONATE_`), the six-table schema, the BUSL-1.1 constraint, and the current gaps. Drop-in: existing SDKs work unchanged.

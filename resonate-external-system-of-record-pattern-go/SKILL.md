@@ -1,12 +1,12 @@
 ---
 name: resonate-external-system-of-record-pattern-go
-description: Maintain consistency between a Resonate Go workflow and an external system that owns the truth — a database, ledger, or third-party API — without distributed transactions, by wrapping every interaction with that system in its own idempotent ctx.Run step so the durable promise records the result and replay never re-fires the external call. Pre-release caveat: the Go SDK has no semver-tagged release; pin a commit for stability.
+description: Maintain consistency between a Resonate Go workflow and an external system that owns the truth — a database, ledger, or third-party API — without distributed transactions, by wrapping every interaction with that system in its own idempotent ctx.Run step so the durable promise records the result and replay never re-fires the external call. Verified against the resonate-sdk-go 0.1.0 tag.
 license: Apache-2.0
 ---
 
 # Resonate External System of Record Pattern — Go
 
-> **Pre-release caveat.** The Go SDK has no semver-tagged release yet — `go get …@latest` resolves to a pseudo-version; pin a commit for stability. APIs may change before the first tag is cut. Every code block here is verified against `develop/go.mdx`; there is no Go system-of-record example repo yet, so all snippets use only documented SDK surface at commit `22076134651f`.
+> **Version note.** The Go SDK's first tagged release is [`0.1.0`](https://github.com/resonatehq/resonate-sdk-go/releases/tag/0.1.0). The tag is `0.1.0`, not `v0.1.0`, so `go get …@latest` does not resolve to it — pin the tag explicitly: `go get github.com/resonatehq/resonate-sdk-go@0.1.0`. APIs may still change before a `1.0`. There is no Go system-of-record example repo yet, so all snippets use only documented SDK surface verified against the `0.1.0` tag source.
 
 ## Overview
 

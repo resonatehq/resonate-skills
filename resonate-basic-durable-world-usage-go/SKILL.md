@@ -1,12 +1,12 @@
 ---
 name: resonate-basic-durable-world-usage-go
-description: Core patterns for writing Resonate durable functions in Go — function kinds (registered vs leaf), Context APIs (ctx.Run, ctx.RPC, ctx.Sleep, ctx.Promise, ctx.Detached, Future.Await), option structs, context accessors, retries (bounded 3-attempt default), fan-out/fan-in, and the replay model. Pre-release: no semver tag yet; APIs verified against develop/go.mdx and resonatehq-examples/*-go repos at SDK commit 22076134651f.
+description: Core patterns for writing Resonate durable functions in Go — function kinds (registered vs leaf), Context APIs (ctx.Run, ctx.RPC, ctx.Sleep, ctx.Promise, ctx.Detached, Future.Await), option structs, context accessors, retries (bounded 3-attempt default), fan-out/fan-in, and the replay model. Verified against the resonate-sdk-go 0.1.0 tag.
 license: Apache-2.0
 ---
 
 # Resonate Basic Durable World Usage — Go
 
-> **Pre-release caveat.** The Go SDK has no semver-tagged release yet — `go get …@latest` resolves to a pseudo-version; pin a commit for stability. APIs may change before the first tag is cut. Every code block here is verified against `develop/go.mdx` and the `resonatehq-examples/*-go` repos at SDK commit `22076134651f`.
+> **Version note.** The Go SDK's first tagged release is [`0.1.0`](https://github.com/resonatehq/resonate-sdk-go/releases/tag/0.1.0). The tag is `0.1.0`, not `v0.1.0`, so `go get …@latest` does not resolve to it — pin the tag explicitly: `go get github.com/resonatehq/resonate-sdk-go@0.1.0`. APIs may still change before a `1.0`. Every code block here is verified against the `0.1.0` tag source and the `resonatehq-examples/*-go` repos.
 
 ## Overview
 
@@ -174,7 +174,7 @@ func approval(ctx *resonate.Context, _ struct{}) (string, error) {
 }
 ```
 
-For full external-resolution mechanics (encoding, `r.Sender().PromiseSettle`, webhook handlers, the base64 encoding requirement, issue #28), see `resonate-human-in-the-loop-pattern-go`.
+For full external-resolution mechanics — the `Promises().Resolve/Reject/Cancel` sub-client (preferred), the CLI, and the low-level `r.Sender().PromiseSettle` fallback with its manual encoding requirement — see `resonate-human-in-the-loop-pattern-go`.
 
 ## `ctx.Detached` — fire-and-forget remote dispatch
 
@@ -338,7 +338,7 @@ Rules of thumb:
 
 - `resonate-basic-ephemeral-world-usage-go` — `resonate.New`, `resonate.Register`, `RegisteredFunc.Run`, `Resonate.RPC`, `Resonate.Get`, `localnet` setup
 - `resonate-recursive-fan-out-pattern-go` — dynamic-depth tree fan-outs, child-workflow dispatch
-- `resonate-human-in-the-loop-pattern-go` — full `ctx.Promise` resolution mechanics, `r.Sender().PromiseSettle`, base64 encoding, webhook handlers
+- `resonate-human-in-the-loop-pattern-go` — full `ctx.Promise` resolution mechanics: `Promises().Resolve/Reject/Cancel`, the CLI, `r.Sender().PromiseSettle`, webhook handlers
 - `resonate-durable-sleep-scheduled-work-go` — recurring work loops, `ctx.Sleep` with server-backed crash recovery
 - `durable-execution` — foundational concepts: checkpointing, replay, the Ephemeral/Durable World split
 - `resonate-defaults` — full defaults table across all SDKs with source citations

@@ -1,12 +1,12 @@
 ---
 name: resonate-recursive-fan-out-pattern-go
-description: Implement recursive fan-out / parallel workflow execution in Go with Resonate — dispatch all children via ctx.RPC or ctx.Run, collect futures in a slice, then await each. Use when processing batches, trees, or graphs where each child is independently durable and optionally recurses. Pre-release caveat: the Go SDK has no semver tag yet; pin a commit for stability.
+description: Implement recursive fan-out / parallel workflow execution in Go with Resonate — dispatch all children via ctx.RPC or ctx.Run, collect futures in a slice, then await each. Use when processing batches, trees, or graphs where each child is independently durable and optionally recurses. Verified against the resonate-sdk-go 0.1.0 tag.
 license: Apache-2.0
 ---
 
 # Resonate Recursive Fan-Out Pattern — Go
 
-> **Pre-release caveat.** The Go SDK has no semver-tagged release yet — `go get …@latest` resolves to a pseudo-version; pin a commit for stability. APIs may change before the first tag is cut. Every code block here is verified against `develop/go.mdx` and the `example-fan-out-fan-in-go` / `example-recursive-factorial-go` repos at SDK commit `22076134651f`.
+> **Version note.** The Go SDK's first tagged release is [`0.1.0`](https://github.com/resonatehq/resonate-sdk-go/releases/tag/0.1.0). The tag is `0.1.0`, not `v0.1.0`, so `go get …@latest` does not resolve to it — pin the tag explicitly: `go get github.com/resonatehq/resonate-sdk-go@0.1.0`. APIs may still change before a `1.0`. Every code block here is verified against the `0.1.0` tag source and the `example-fan-out-fan-in-go` / `example-recursive-factorial-go` repos.
 
 ## Overview
 

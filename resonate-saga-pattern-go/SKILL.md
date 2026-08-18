@@ -1,12 +1,12 @@
 ---
 name: resonate-saga-pattern-go
-description: Implement saga patterns for distributed transactions in Go with Resonate — forward steps tracked in a slice with compensating actions that unwind in reverse on failure, using explicit (T, error) returns and a type Step string + switch for compensation dispatch. Use when coordinating multi-step Go workflows that need consistency across failures without a distributed transaction. Pre-release caveat: the Go SDK has no semver-tagged release yet; every code block here is verified against develop/go.mdx at commit 22076134651f.
+description: Implement saga patterns for distributed transactions in Go with Resonate — forward steps tracked in a slice with compensating actions that unwind in reverse on failure, using explicit (T, error) returns and a type Step string + switch for compensation dispatch. Use when coordinating multi-step Go workflows that need consistency across failures without a distributed transaction. Verified against the resonate-sdk-go 0.1.0 tag.
 license: Apache-2.0
 ---
 
 # Resonate Saga Pattern — Go
 
-> **Pre-release caveat.** The Go SDK has no semver-tagged release yet — `go get …@latest` resolves to a pseudo-version; pin a commit for stability. APIs may change before the first tag is cut. Every code block here is verified against `develop/go.mdx`; there is no Go saga example repo yet, so all snippets use only documented SDK surface at commit `22076134651f`.
+> **Version note.** The Go SDK's first tagged release is [`0.1.0`](https://github.com/resonatehq/resonate-sdk-go/releases/tag/0.1.0). The tag is `0.1.0`, not `v0.1.0`, so `go get …@latest` does not resolve to it — pin the tag explicitly: `go get github.com/resonatehq/resonate-sdk-go@0.1.0`. APIs may still change before a `1.0`. There is no Go saga example repo yet, so all snippets use only documented SDK surface verified against the `0.1.0` tag source.
 
 ## Overview
 

@@ -1,12 +1,12 @@
 ---
 name: resonate-basic-ephemeral-world-usage-go
-description: Core patterns for using the Resonate Go SDK's Client APIs from the ephemeral world — initializing a Resonate instance, registering durable functions with the package-level generic resonate.Register, invoking them top-level via RegisteredFunc.Run, dispatching remotely with Resonate.RPC, reconnecting to an existing execution with Resonate.Get, reading typed and untyped handle results, RunOptions, and Stop semantics. Pre-release caveat: the Go SDK has no semver-tagged release yet; APIs may change before the first tag is cut.
+description: Core patterns for using the Resonate Go SDK's Client APIs from the ephemeral world — initializing a Resonate instance, registering durable functions with the package-level generic resonate.Register, invoking them top-level via RegisteredFunc.Run, dispatching remotely with Resonate.RPC, reconnecting to an existing execution with Resonate.Get, reading typed and untyped handle results, RunOptions, Stop semantics, and the direct Promises() / Schedules() sub-clients. Verified against the resonate-sdk-go 0.1.0 tag.
 license: Apache-2.0
 ---
 
 # Resonate Basic Ephemeral World Usage — Go
 
-> **Pre-release caveat.** The Go SDK has no semver-tagged release yet — `go get …@latest` resolves to a pseudo-version; pin a commit for stability. APIs may change before the first tag is cut. Every code block here is verified against `develop/go.mdx` and the `resonatehq-examples/*-go` repos at SDK commit `22076134651f`.
+> **Version note.** The Go SDK's first tagged release is [`0.1.0`](https://github.com/resonatehq/resonate-sdk-go/releases/tag/0.1.0). The tag is `0.1.0`, not `v0.1.0`, so `go get …@latest` does not resolve to it (it walks `main` instead and returns a newer pseudo-version). Pin the tag explicitly — see Install below. APIs may still change before a `1.0`. Every code block here is verified against the `0.1.0` tag source and the `resonatehq-examples/*-go` repos.
 
 ## Overview
 
@@ -17,14 +17,10 @@ This skill covers the Client API surface only. The Durable World (Context APIs i
 ## Install
 
 ```shell
-go get github.com/resonatehq/resonate-sdk-go@latest
+go get github.com/resonatehq/resonate-sdk-go@0.1.0
 ```
 
-Pin a specific commit for reproducible builds until a semver tag is published:
-
-```shell
-go get github.com/resonatehq/resonate-sdk-go@22076134651f
-```
+The tag on GitHub is `0.1.0` (no `v` prefix), so this is **not** the same as `go get …@latest` — `@latest` walks `main` past the tag and resolves to a newer pseudo-version instead. Requesting the tag by name resolves correctly: the module proxy mints the pseudo-version pinned to that exact commit (verify with `curl -s https://proxy.golang.org/github.com/resonatehq/resonate-sdk-go/@v/0.1.0.info`). Pin a later commit the same way (`@<short-sha>`) for reproducible builds ahead of the next tag.
 
 Core imports:
 
@@ -237,6 +233,53 @@ result, err := resonate.ResultOf[string](ctx, h)
 
 A rejected promise surfaces as `*resonate.ApplicationError` (or the deserialized concrete error where available).
 
+## Direct promise & schedule API
+
+`0.1.0` shipped two sub-clients on `*Resonate` for working with durable promises and cron schedules **outside** the workflow machinery — no registered function, no dispatch tags, just a promise or a schedule you manage directly. Get them via `r.Promises()` / `r.Schedules()` (methods, not fields).
+
+### `r.Promises()` — create, get, resolve/reject/cancel
+
+```go
+ctx := context.Background()
+
+// Create a promise settled by some external party (a webhook, an operator).
+rec, err := r.Promises().Create(ctx, "order-1", 24*time.Hour, resonate.PromiseCreateOptions{
+    Param: Order{Item: "book"},
+    Tags:  map[string]string{"kind": "order"},
+})
+if err != nil {
+    log.Fatalf("Create: %v", err)
+}
+
+// Settle it from anywhere holding the ID.
+rec, err = r.Promises().Resolve(ctx, "order-1", Receipt{Total: 42})
+// ...or r.Promises().Reject(ctx, "order-1", err) / r.Promises().Cancel(ctx, "order-1", nil)
+
+// Read it back; Value decodes directly into a Go value.
+rec, err = r.Promises().Get(ctx, "order-1")
+var receipt Receipt
+err = rec.Value.Decode(&receipt)
+```
+
+`Resolve`/`Reject`/`Cancel` handle the JSON → codec encoding for you (the same `Codec` the workflow machinery uses) — this is the fix for the old "manual base64 encoding" trap on the low-level `Sender().PromiseSettle` path (see `resonate-human-in-the-loop-pattern-go` and `resonate-basic-debugging-go` for that path, still useful for cross-process/non-Go settlement). `Create`'s timeout is relative to now; `<= 0` defaults to `resonate.DefaultTopLevelTimeout` (24h). `Get` returns `*resonate.ServerError{Code: 404}` when the promise does not exist.
+
+### `r.Schedules()` — create, get, delete
+
+```go
+// A cron schedule creates a fresh promise on every firing, from a promise ID
+// template (may include placeholders like {{.timestamp}}).
+s, err := r.Schedules().Create(ctx, "nightly", "0 0 * * *", "report-{{.timestamp}}", time.Hour,
+    resonate.ScheduleCreateOptions{PromiseParam: ReportArgs{Region: "us"}})
+if err != nil {
+    log.Fatalf("Create: %v", err)
+}
+
+s, err = r.Schedules().Get(ctx, "nightly")
+err = r.Schedules().Delete(ctx, "nightly")
+```
+
+This creates the cron-fired *promise* directly — it is the Go equivalent of Python's `resonate.schedules.create(...)` sub-client, not the higher-level `resonate.schedule(id, cron, fn, args)` convenience wrapper that Python, TypeScript, and Rust also expose (which dispatches a *registered function* on the cron and wires the `resonate:target`/`resonate:origin` tags for you). Go's `0.1.0` tag does not have that convenience wrapper yet — to fire a registered function on a schedule, set `PromiseTags: map[string]string{"resonate:target": <group>}` and shape `PromiseParam` as `map[string]any{"func": "your-fn-name", "args": args}` by hand, matching what `RegisteredFunc.Run` and `Resonate.RPC` build internally.
+
 ## Stop Semantics
 
 ```go
@@ -277,6 +320,8 @@ The worker process keeps running but silently stops processing. Let `SIGINT` / `
 ## Related Skills
 
 - `resonate-basic-durable-world-usage-go` — Context APIs: `ctx.Run`, `ctx.RPC`, `ctx.Sleep`, `ctx.Promise`, `ctx.Detached`, fan-out patterns, retry policies, context accessors
+- `resonate-human-in-the-loop-pattern-go` — `Promises().Resolve/Reject/Cancel` in the human-in-the-loop context, plus the CLI and low-level fallback paths
+- `resonate-durable-sleep-scheduled-work-go` — `Schedules()` in the recurring-work context, and the workaround for dispatching a registered function on a cron
 - `durable-execution` — foundational concepts; read this first if new to Resonate
 - `resonate-defaults` — SDK-wide defaults reference (TTL, retry policy, top-level timeout, child timeout)
 - `resonate-basic-ephemeral-world-usage-typescript` — TypeScript sibling for comparison

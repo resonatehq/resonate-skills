@@ -207,7 +207,7 @@ let schedule = resonate
 schedule.delete().await?;
 ```
 
-(Python SDK does not expose a top-level `.schedule(...)` at v0.6.7; Rust does at v0.6.0. Cross-SDK parity is not yet achieved — see Related notes below.)
+(Python's `resonate-sdk` 0.7.4 also has a top-level `resonate.schedule(id, cron, func_name, args=, kwargs=, promise_timeout=, version=)` — confirmed against the installed `resonate/resonate.py`. Go's `0.1.0` tag has the lower-level `Schedules().Create` sub-client but not this same top-level function-dispatch convenience wrapper — see Related notes below.)
 
 ### Subscribe to an existing invocation
 

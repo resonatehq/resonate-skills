@@ -39,9 +39,9 @@ code.
 | SDK | Version | Source |
 |---|---|---|
 | TypeScript | `@resonatehq/sdk` v0.11.4 | npm |
-| Python | `resonate-sdk` v0.6.7 | PyPI |
+| Python | `resonate-sdk` v0.7.4 | PyPI |
 | Rust | `resonate-sdk` v0.6.0 | crates.io |
-| Go | pre-release, tracks `main` | GitHub |
+| Go | `0.1.0` (tag has no `v` prefix — `go get github.com/resonatehq/resonate-sdk-go@0.1.0`) | GitHub |
 
 ## Core mappings (apply everywhere)
 
@@ -49,7 +49,7 @@ code.
 |---|---|
 | `@workflow.defn` / Workflow type | a registered function (`@resonate.register`, `resonate.register("name", fn)`, `#[resonate::function]`, `resonate.Register(r, "name", fn)`) |
 | `@activity.defn` / Activity | a plain function invoked via `ctx.run(fn, args)` |
-| `workflow.execute_activity(fn, …, start_to_close_timeout=…)` | `yield ctx.run(fn, args)` — no timeout policy required |
+| `workflow.execute_activity(fn, …, start_to_close_timeout=…)` | `await ctx.run(fn, args)` (py, ts async engine) / `yield* ctx.run(fn, args)` (ts generator engine) / `ctx.run(fn, args).await?` (rs) / `ctx.Run(fn, args)` then `f.Await(&out)` (go) — no timeout policy required |
 | Task Queue + Worker wiring | a worker `group` (only when you need distributed dispatch) |
 | `executeChild` / `ExecuteChildWorkflow(ChildType, …)` | `ctx.rpc("name", args)` or `ctx.run(fn, args)` — invoke by registered name; recursion is trivial |
 | `Promise.all` / `asyncio.gather` / parallel futures (fan-out) | start each non-blocking (`ctx.beginRun` / `ctx.rfi` / `.spawn()` / `ctx.RPC`), then await each |
@@ -126,19 +126,21 @@ code.
   with `resonate.promises.resolve(id, value)`. Delete Query handlers.
 - **RESOLVE API — verify against pinned version:**
   - ts (0.11.4): `resonate.promises.resolve(id, { data: Buffer.from(JSON.stringify(v)).toString("base64") })`
-  - py (0.6.7): `resonate.promises.resolve(id=…, ikey=…)`
+  - py (0.7.4): `await resonate.promises.resolve(id, value)` — positional `id` and a
+    `Value`, not `resolve(id=…, ikey=…)`; there is no `ikey` kwarg on `Promises.resolve`
+    in this release.
   - rs (0.6.0): `resonate.promises.resolve(&id, Value::from_serializable(v)?)`
     (the example repo may use `json!(v)` — verify it compiles against your
     released crate version; use the `Value` form if not)
-  - go (main): **no high-level resolve yet** — use the CLI
-    `resonate promises resolve <id> --value '{"data":"…"}'` or
-    `r.Sender().PromiseSettle(...)` with a base64-encoded codec value
-    (resonate-sdk-go#28).
+  - go (0.1.0): `r.Promises().Resolve(ctx, id, v)` — the direct `Promises()` sub-client
+    handles the codec encoding for you. The CLI (`resonate promises resolve <id> --value '{"data":"…"}'`)
+    and the low-level `r.Sender().PromiseSettle(...)` (manual base64-encoded codec value)
+    remain available for cross-process or non-Go settlement.
 - **TEMPORAL SOURCE:** `samples-typescript/signals-queries`,
   `samples-python/hello/hello_signal.py`, `samples-go/await-signals`.
 - **RESONATE TARGET:** `example-human-in-the-loop-{ts,py,rs,go}`.
 - **RELATED SKILL:** `resonate-human-in-the-loop-pattern-{typescript,python,rust,go}`.
-- **COVERAGE:** ts ✅ py ✅ rs ✅ go ✅ (Go resolve is lower-level).
+- **COVERAGE:** ts ✅ py ✅ rs ✅ go ✅ (`0.1.0` has a direct `Promises().Resolve`; the CLI and low-level `Sender().PromiseSettle` remain as alternates).
 
 ## Pattern: Saga / compensation
 

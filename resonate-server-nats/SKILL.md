@@ -16,7 +16,7 @@ Three things an agent must internalize before writing any code:
 2. **It is not drop-in.** Unlike the ScyllaDB provider, this server has **no HTTP interface whatsoever** — there is no `net/http` in it. `RESONATE_URL` is meaningless here. Workers connect over NATS via the `NatsNetwork` client.
 3. **Only TypeScript and Python can talk to it.** `NatsNetwork` ships in those two SDKs. Go, Rust, and Java have no NATS client, so teams on those languages cannot use this provider. Say so early rather than after they've committed.
 
-Related: [`resonate-server-scylladb`](../resonate-server-scylladb/SKILL.md) (the drop-in provider), [`resonate-server-deployment`](../resonate-server-deployment/SKILL.md) (core server on systemd).
+Related: [`resonate-server-scylladb`](../resonate-server-scylladb/SKILL.md) (the drop-in provider), [`resonate-server-postgres`](../resonate-server-postgres/SKILL.md) (the protocol inside Postgres, no server process), [`resonate-server-deployment`](../resonate-server-deployment/SKILL.md) (core server on systemd).
 
 ## When to use this skill
 

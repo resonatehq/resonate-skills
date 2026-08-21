@@ -10,6 +10,8 @@ license: Apache-2.0
 
 Build durable workflows on Supabase Edge Functions using Resonate, with start/probe endpoints and optional progress tracking in Supabase.
 
+Related: [`resonate-server-postgres`](../resonate-server-postgres/SKILL.md) — the server these workers talk to. Use it for installing `resonate-pg`, the `pg_cron` timer dependency, `invoke`'s 24-hour default timeout, grants, retention, and the known gaps.
+
 ## Summary
 
 - Build durable workflows on Supabase Edge Functions using the Resonate Supabase shim.

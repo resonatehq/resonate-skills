@@ -15,7 +15,7 @@ Two consequences an agent must internalize before writing any config:
 1. **You cannot get ScyllaDB by configuring the core server.** There is no `RESONATE_STORAGE__TYPE=scylladb`. You run a different binary from a different repository.
 2. **It speaks the same HTTP/JSON protocol.** Application code, SDK choice, and worker code are unchanged. The only thing that changes is what `RESONATE_URL` points at.
 
-Related: [`resonate-server-nats`](../resonate-server-nats/SKILL.md) (the other provider — NATS-native, not drop-in), [`resonate-server-deployment`](../resonate-server-deployment/SKILL.md) (core server on systemd), [`resonate-server-deployment-cloud-run`](../resonate-server-deployment-cloud-run/SKILL.md) (core server on Cloud Run).
+Related: [`resonate-server-nats`](../resonate-server-nats/SKILL.md) (another provider — NATS-native, not drop-in), [`resonate-server-postgres`](../resonate-server-postgres/SKILL.md) (another provider — the protocol inside Postgres, no server process), [`resonate-server-deployment`](../resonate-server-deployment/SKILL.md) (core server on systemd), [`resonate-server-deployment-cloud-run`](../resonate-server-deployment-cloud-run/SKILL.md) (core server on Cloud Run).
 
 ## When to use this skill
 

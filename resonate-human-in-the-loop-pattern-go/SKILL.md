@@ -209,7 +209,7 @@ r, err := resonate.New(resonate.Config{
 
 ## Known gaps
 
-- **No hand-chosen promise IDs.** Go's `ctx.Promise` generates the ID internally. Unlike TypeScript's `ctx.promise({ id: "approval/order-42" })`, you cannot pass a deterministic application-layer ID. Fetch the ID via `f.ID()` after creation and publish it explicitly.
+- **No hand-chosen promise IDs.** `ctx.Promise` generates the ID internally — you cannot pass a deterministic application-layer ID. This is shared behavior, not a Go shortfall: TypeScript's `ctx.promise()` only accepts `{ timeout, data, tags }` and generates the ID the same way. Fetch the ID via `f.ID()` after creation (TypeScript: `promise.id`) and publish it explicitly.
 - **No first-responder race helper.** There is no `select`-style mechanism to await whichever of several latent promises settles first. Workaround: create one promise per participant, await each in sequence, and have a coordinator cancel the others once a winner is known; or use a helper workflow that calls `r.Promises().Resolve` on a shared promise from the first responder's branch.
 
 ## Distinct Go idioms

@@ -328,7 +328,6 @@ router.post("/api/workflows/:id/complete", async (req, res) => {
 // External worker
 function* approvalWorkflow(ctx: Context, orderId: string) {
   const promise = yield* ctx.promise({
-    id: `approval-${orderId}`,
     timeout: 24 * 60 * 60 * 1000
   });
 
@@ -742,7 +741,6 @@ function* processOrder(ctx: Context, order: any) {
 
   // Create approval promise
   const approval = yield* ctx.promise({
-    id: `approval-${order.id}`,
     timeout: 24 * 60 * 60 * 1000
   });
 

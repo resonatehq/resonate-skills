@@ -25,20 +25,20 @@ resonate.register("orderSaga", function* (ctx: Context, orderId: string) {
   const completed: string[] = [];
 
   try {
-    yield ctx.run(reserveInventory, orderId);
+    yield* ctx.run(reserveInventory, orderId);
     completed.push("inventory");
 
-    yield ctx.run(chargePayment, orderId);
+    yield* ctx.run(chargePayment, orderId);
     completed.push("payment");
 
-    yield ctx.run(createShipment, orderId);
+    yield* ctx.run(createShipment, orderId);
     completed.push("shipment");
 
     return { status: "success", orderId };
   } catch (error) {
     // Compensate in reverse order — each compensation is also checkpointed
     for (const step of completed.reverse()) {
-      yield ctx.run(compensate, step, orderId);
+      yield* ctx.run(compensate, step, orderId);
     }
     return { status: "rolled-back", orderId, compensated: completed };
   }
@@ -69,8 +69,9 @@ function* createShipment(_ctx: Context, orderId: string) {
   return { tracking: `TRACK_${orderId}` };
 }
 
-await resonate.start();
-await resonate.invoke("orderSaga", ["order-42"], { id: "order-42" });
+// The client starts polling as soon as it's constructed — there's no
+// separate start() call.
+const result = await resonate.run("order-42", "orderSaga", "order-42");
 await resonate.stop();
 ```
 
@@ -90,14 +91,14 @@ function* runSaga(ctx: Context, steps: SagaStep[], orderId: string) {
 
   try {
     for (const step of steps) {
-      yield ctx.run(step.forward, orderId);
+      yield* ctx.run(step.forward, orderId);
       completed.push(step);
     }
     return { status: "success" };
   } catch (error) {
     for (const step of completed.reverse()) {
       try {
-        yield ctx.run(step.compensate, orderId);
+        yield* ctx.run(step.compensate, orderId);
       } catch (compError) {
         console.error(`Compensation failed for ${step.name}:`, compError);
         // Log but continue — other steps still need compensating
@@ -129,9 +130,9 @@ resonate.register("notifyAll", function* (ctx: Context, orderId: string) {
 
   for (const channel of channels) {
     try {
-      const result = yield ctx.rpc(`send-${channel}`, [orderId], {
-        target: `poll://any@${channel}-workers`,
-      });
+      const result = yield* ctx.rpc(`send-${channel}`, orderId, ctx.options({
+        target: `${channel}-workers`,
+      }));
       results.push({ channel, ok: true });
     } catch (err) {
       results.push({ channel, ok: false });
@@ -141,22 +142,29 @@ resonate.register("notifyAll", function* (ctx: Context, orderId: string) {
 });
 ```
 
+Args to `ctx.rpc()`/`ctx.run()` are variadic (`orderId`, not `[orderId]`), and the trailing options go through `ctx.options()` — a plain `{ target: ... }` literal isn't recognized as an options object, so it's silently passed through as an extra positional argument to the callee instead of configuring routing, and the call falls back to the default target. `target` also takes the bare group name; the client's own routing adds the transport-specific scheme (`poll://any@…` over HTTP, `local://any@…`/`nats://…` on the other adapters).
+
 ### Parallel Fan-Out via Worker Groups
 
-Each `ctx.rpc()` suspends the generator. The server-side execution IS parallel — each RPC runs on its own worker. But the generator awaits them in order:
+`ctx.rpc()` is call-and-wait — dispatch, then block until that one call resolves, so a loop of `ctx.rpc()` calls handles items one at a time. For genuine concurrency, use `ctx.beginRpc()`: it creates the durable promise and returns immediately with a `Future`, without waiting for a result. Dispatch every item first, then `yield` each future — by the time you start collecting, the RPCs are already in flight on the server.
 
 ```typescript
 resonate.register("batchScore", function* (ctx: Context, items: string[]) {
-  const scores: Array<{ item: string; score: number }> = [];
-
+  // Dispatch all items up front — beginRpc doesn't wait for a result, so
+  // this loop only suspends on promise creation, not on completion.
+  const futures = [];
   for (const item of items) {
-    // Each RPC dispatches to a pool of scoring workers.
-    // The server runs them on separate workers simultaneously.
-    // The generator processes results as each RPC completes.
-    const score = yield ctx.rpc("computeScore", [item], {
-      target: "poll://any@scoring-workers",
-    });
-    scores.push({ item, score: score as number });
+    futures.push(yield* ctx.beginRpc("computeScore", item, ctx.options({
+      target: "scoring-workers",
+    })));
+  }
+
+  // Now collect results. This is where the generator actually suspends —
+  // and it suspends on work that's already dispatched.
+  const scores: Array<{ item: string; score: number }> = [];
+  for (let i = 0; i < items.length; i++) {
+    const score = yield* futures[i];
+    scores.push({ item: items[i], score: score as number });
   }
 
   return { total: scores.length, scores };
@@ -168,10 +176,17 @@ scorer.register("computeScore", function* (_ctx: Context, item: string) {
   // Your scoring logic here
   return Math.random() * 100;
 });
-await scorer.start();
 ```
 
-**Limitation:** The SDK processes RPCs sequentially in the generator. True parallel fan-in (`ctx.all([...])`) is not yet available. Workaround: dispatch multiple independent workflows via the gateway, then aggregate externally.
+**Async engine:** `ctx.run`/`ctx.rpc` are eager there — calling one dispatches immediately and returns an awaitable `DurablePromise`, so fan-out is just `Promise.all`:
+
+```typescript
+const scores = await Promise.all(
+  items.map((item) => ctx.rpc("computeScore", item, ctx.options({ target: "scoring-workers" }))),
+);
+```
+
+No `beginRpc`/`Future` split needed — eager dispatch does automatically what `beginRpc` does explicitly in the generator engine.
 
 **When to use:** Batch processing, parallel API calls, map-reduce workloads, multi-channel notifications.
 
@@ -185,25 +200,27 @@ The workflow suspends without holding resources. It resumes when a human (or web
 
 ```typescript
 resonate.register("approvalFlow", function* (ctx: Context, orderId: string) {
-  const approvalId = `approval-${orderId}`;
+  // Step 1: Create the promise. ctx.promise() assigns its own id — there's
+  // no way to pass one in — so read it back off the returned Future.
+  const approval = yield* ctx.promise({
+    timeout: 48 * 60 * 60 * 1000,  // 48 hours, relative
+  });
 
-  // Step 1: Send notification (durable checkpoint)
-  yield ctx.run(function* () {
-    console.log(`Approve at: http://localhost:5001/approve?promise_id=${approvalId}`);
+  // Step 2: Send notification with the promise's id (durable checkpoint)
+  yield* ctx.run(function* () {
+    console.log(`Approve at: http://localhost:5001/approve?promise_id=${approval.id}`);
     return { notified: true };
   });
 
-  // Step 2: Suspend until human resolves the promise
-  const decision = yield ctx.promise(approvalId, {
-    timeoutAt: Date.now() + 48 * 60 * 60 * 1000,  // 48 hours
-  });
+  // Step 3: Suspend until human resolves the promise
+  const decision = yield* approval;
 
-  // Step 3: Process the decision (resumed from checkpoint)
+  // Step 4: Process the decision (resumed from checkpoint)
   if (decision === "approved") {
-    yield ctx.run(processOrder, orderId);
+    yield* ctx.run(processOrder, orderId);
     return { status: "approved", orderId };
   } else {
-    yield ctx.run(cancelOrder, orderId);
+    yield* ctx.run(cancelOrder, orderId);
     return { status: "rejected", orderId };
   }
 });
@@ -239,12 +256,12 @@ async function handleApproval(promiseId: string, decision: string) {
 
 ### Multi-Stage Approval
 
-Chain multiple `ctx.promise()` calls for sequential gates (manager → finance → legal). Each gate suspends independently. Pattern: `yield ctx.run(notify, ...) → yield ctx.promise(gateId) → check decision → next gate`.
+Chain multiple `ctx.promise()` calls for sequential gates (manager → finance → legal). Each gate suspends independently. Pattern per gate: `yield* ctx.promise({...}) → yield* ctx.run(notify, gate.id) → yield gate → check decision → next gate`.
 
 **Promise ID rules:**
-- Must be deterministic (derived from workflow inputs, not `Date.now()` or `Math.random()`)
-- Must be known to the settling system (include in approval URLs, store in DB)
-- Must be unique per approval gate (`approval-${orderId}` not just `approval`)
+- `ctx.promise()` assigns the id itself — there's no parameter to supply your own
+- Read the id off the returned `Future` (`gate.id`) right after creating the promise, before notifying anyone
+- That id is the only way the settling system can find the promise — embed it in the approval URL or store it against the order in your DB
 
 **When to use:** Approval workflows, manual review gates, external callbacks, payment confirmation, webhook-driven processes.
 
@@ -258,16 +275,16 @@ Chain multiple `ctx.promise()` calls for sequential gates (manager → finance �
 
 ```typescript
 resonate.register("onboarding", function* (ctx: Context, userId: string) {
-  yield ctx.run(sendEmail, userId, "Welcome to the platform!");
+  yield* ctx.run(sendEmail, userId, "Welcome to the platform!");
 
-  yield ctx.sleep(24 * 60 * 60 * 1000);  // 1 day
-  yield ctx.run(sendEmail, userId, "Getting started tips");
+  yield* ctx.sleep(24 * 60 * 60 * 1000);  // 1 day
+  yield* ctx.run(sendEmail, userId, "Getting started tips");
 
-  yield ctx.sleep(6 * 24 * 60 * 60 * 1000);  // 6 days
-  yield ctx.run(sendEmail, userId, "How are you finding things?");
+  yield* ctx.sleep(6 * 24 * 60 * 60 * 1000);  // 6 days
+  yield* ctx.run(sendEmail, userId, "How are you finding things?");
 
-  yield ctx.sleep(14 * 24 * 60 * 60 * 1000);  // 14 days
-  yield ctx.run(sendEmail, userId, "Upgrade to Pro — 20% off this week");
+  yield* ctx.sleep(14 * 24 * 60 * 60 * 1000);  // 14 days
+  yield* ctx.run(sendEmail, userId, "Upgrade to Pro — 20% off this week");
 
   return { userId, emailsSent: 4 };
 });
@@ -277,15 +294,15 @@ resonate.register("onboarding", function* (ctx: Context, userId: string) {
 
 ```typescript
 resonate.register("slaMonitor", function* (ctx: Context, ticketId: string) {
-  yield ctx.run(assignTicket, ticketId);
+  yield* ctx.run(assignTicket, ticketId);
 
   // Wait 4 hours for response
-  yield ctx.sleep(4 * 60 * 60 * 1000);
+  yield* ctx.sleep(4 * 60 * 60 * 1000);
 
-  const status = yield ctx.run(checkTicketStatus, ticketId);
+  const status = yield* ctx.run(checkTicketStatus, ticketId);
   if (status === "open") {
-    yield ctx.run(escalateTicket, ticketId);
-    yield ctx.run(notifyManager, ticketId);
+    yield* ctx.run(escalateTicket, ticketId);
+    yield* ctx.run(notifyManager, ticketId);
   }
 
   return { ticketId, escalated: status === "open" };
@@ -300,12 +317,12 @@ resonate.register("reliableWebhook", function* (ctx: Context, url: string, paylo
   const baseDelay = 1000;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const result = yield ctx.run(tryWebhook, url, payload, attempt);
+    const result = yield* ctx.run(tryWebhook, url, payload, attempt);
     if (result.success) return { delivered: true, attempts: attempt };
 
     if (attempt < maxAttempts) {
       // Exponential backoff: 1s, 2s, 4s, 8s — all durable
-      yield ctx.sleep(baseDelay * Math.pow(2, attempt - 1));
+      yield* ctx.sleep(baseDelay * Math.pow(2, attempt - 1));
     }
   }
   return { delivered: false, attempts: maxAttempts };
@@ -327,19 +344,19 @@ Model a domain entity's lifecycle as a durable workflow. Each state transition i
 ```typescript
 resonate.register("orderLifecycle", function* (ctx: Context, orderId: string, items: string[]) {
   // Created
-  const order = yield ctx.run(createOrder, orderId, items);
+  const order = yield* ctx.run(createOrder, orderId, items);
 
   // Validated
-  yield ctx.run(validateOrder, order);
+  yield* ctx.run(validateOrder, order);
 
   // Payment processed
-  const payment = yield ctx.run(processPayment, order);
+  const payment = yield* ctx.run(processPayment, order);
 
   // Fulfilled
-  const shipment = yield ctx.run(fulfillOrder, order, payment);
+  const shipment = yield* ctx.run(fulfillOrder, order, payment);
 
   // Notified
-  yield ctx.run(notifyCustomer, order, shipment);
+  yield* ctx.run(notifyCustomer, order, shipment);
 
   return { orderId, status: "fulfilled", tracking: shipment.tracking };
 });
@@ -361,19 +378,17 @@ const api = new Resonate({ url: "http://localhost:8001", group: "api" });
 
 api.register("handleOrder", function* (ctx: Context, orderId: string) {
   // Dispatch to payment workers — suspends until complete
-  const charge = yield ctx.rpc("chargeCard", [orderId, 99.99], {
-    target: "poll://any@payment-workers",
-  });
+  const charge = yield* ctx.rpc("chargeCard", orderId, 99.99, ctx.options({
+    target: "payment-workers",
+  }));
 
   // Dispatch to shipping workers
-  const shipment = yield ctx.rpc("createShipment", [orderId, charge.txnId], {
-    target: "poll://any@shipping-workers",
-  });
+  const shipment = yield* ctx.rpc("createShipment", orderId, charge.txnId, ctx.options({
+    target: "shipping-workers",
+  }));
 
   return { orderId, charge, shipment };
 });
-
-await api.start();
 
 // --- Payment workers (separate process) ---
 const payments = new Resonate({ url: "http://localhost:8001", group: "payment-workers" });
@@ -381,7 +396,6 @@ payments.register("chargeCard", function* (_ctx: Context, orderId: string, amoun
   console.log(`Charging $${amount} for ${orderId}`);
   return { txnId: `txn_${orderId}`, amount };
 });
-await payments.start();
 
 // --- Shipping workers (separate process) ---
 const shipping = new Resonate({ url: "http://localhost:8001", group: "shipping-workers" });
@@ -389,7 +403,6 @@ shipping.register("createShipment", function* (_ctx: Context, orderId: string, t
   console.log(`Shipping ${orderId} (txn: ${txnId})`);
   return { tracking: `TRACK_${orderId}` };
 });
-await shipping.start();
 ```
 
 ### Gateway Dispatch (Non-Workflow Context)

@@ -48,9 +48,9 @@ The lowest-cost production deployment. A $5/mo VPS (Hetzner, DigitalOcean, Linod
 ```bash
 # Download the prebuilt binary from GitHub releases (recommended):
 # https://github.com/resonatehq/resonate/releases
-# Example for Linux x86_64:
-curl -L https://github.com/resonatehq/resonate/releases/latest/download/resonate-linux-amd64 \
-  -o /usr/local/bin/resonate-server
+# Example for Linux x86_64 (release assets are tarballs, not bare binaries):
+curl -L https://github.com/resonatehq/resonate/releases/latest/download/resonate_linux_x86_64.tar.gz \
+  | tar -xzO > /usr/local/bin/resonate-server
 chmod +x /usr/local/bin/resonate-server
 
 # Alternatively, build from source (requires Rust toolchain):
@@ -77,7 +77,7 @@ WorkingDirectory=/opt/resonate
 Environment=RESONATE_STORAGE__SQLITE__PATH=/data/resonate/resonate.db
 Environment=RESONATE_SERVER__PORT=8001
 Environment=RESONATE_SERVER__BIND=0.0.0.0
-ExecStart=/usr/local/bin/resonate-server
+ExecStart=/usr/local/bin/resonate-server serve
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
@@ -168,14 +168,14 @@ openssl rsa -in private_key.pem -pubout -out public_key.pem
 ```bash
 # Install jwt-cli: brew install mike-engel/jwt-cli/jwt-cli
 
+# The server requires an `exp` claim on every token — always pass --exp,
+# or the token fails authentication before the prefix is ever checked.
+
 # Unrestricted access (empty prefix)
-jwt encode --secret @private_key.pem -A RS256 '{"prefix":""}'
+jwt encode --secret @private_key.pem -A RS256 --exp='+90 days' '{"prefix":""}'
 
 # Scoped to a prefix (only promises starting with "my-app/")
-jwt encode --secret @private_key.pem -A RS256 '{"prefix":"my-app/"}'
-
-# With expiration
-jwt encode --secret @private_key.pem -A RS256 --exp='+90 days' '{"prefix":""}'
+jwt encode --secret @private_key.pem -A RS256 --exp='+90 days' '{"prefix":"my-app/"}'
 ```
 
 | Payload | Access |
@@ -269,7 +269,7 @@ The Resonate server is a **single-process, single-writer** system. SQLite suppor
 
 - **Vertical scaling:** More CPU + RAM + fast SSD. Handles substantial throughput.
 - **Shard by prefix:** Multiple server instances, each with its own database, partitioned by promise ID prefix.
-- **Graduate:** If you outgrow embedded SQLite, migrate to a PostgreSQL-backed Resonate server implementation.
+- **Graduate:** If you outgrow embedded SQLite, point the same binary at Postgres with `--storage-type postgres` (or `mysql`) — no separate implementation needed.
 
 For most workloads, a single $5-20/mo VPS with an SSD is plenty.
 

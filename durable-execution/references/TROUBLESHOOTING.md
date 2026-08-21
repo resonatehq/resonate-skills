@@ -30,7 +30,7 @@ The server dispatched a task for function `processOrder`, but no worker has regi
 # Look for: "register: processOrder"
 ```
 
-**Fix:** Ensure `resonate.register("processOrder", fn)` is called before `resonate.start()`.
+**Fix:** Ensure `resonate.register("processOrder", fn)` runs immediately after constructing the `Resonate` client — there's no separate `start()` call; the client begins accepting dispatched tasks as soon as it's constructed, so a function registered later misses early tasks.
 
 ### Cause 2: Target Group Mismatch
 
@@ -53,7 +53,7 @@ curl -s -X POST http://localhost:8001 \
 const result = ctx.run(myStep, data);
 
 // CORRECT — yield the Descriptor
-const result = yield ctx.run(myStep, data);
+const result = yield* ctx.run(myStep, data);
 ```
 
 **Fix:** Add `yield` before every `ctx.run()`, `ctx.rpc()`, `ctx.sleep()`, and `ctx.promise()`.
@@ -124,7 +124,7 @@ curl -s -X POST http://localhost:8001 \
 ### 403 Forbidden
 
 - **Prefix mismatch:** Token's `prefix` claim doesn't match the promise ID prefix
-- **Empty payload `{}`:** An empty JWT payload denies all access. Must include `"prefix": ""` for unrestricted access
+- **No `prefix` claim:** A token without a `prefix` claim denies all access. Must include `"prefix": ""` for unrestricted access. (A literally empty payload `{}` fails earlier as a 401 — the server also requires an `exp` claim on every token, signed or not.)
 
 ---
 
@@ -138,7 +138,7 @@ resonate.register("myWorkflow", function* (ctx: Context) {
   console.log("Starting workflow");
 
   // This only runs once — result is cached
-  const result = yield ctx.run(function* () {
+  const result = yield* ctx.run(function* () {
     console.log("This also replays, but the RESULT is cached");
     return 42;
   });
@@ -147,7 +147,7 @@ resonate.register("myWorkflow", function* (ctx: Context) {
 });
 ```
 
-**Fix:** Move side effects inside `yield ctx.run()` blocks. Use the outbox pattern for external calls (emails, webhooks). Accept that `console.log` inside generators will re-execute on replay.
+**Fix:** Move side effects inside `yield* ctx.run()` blocks. Use the outbox pattern for external calls (emails, webhooks). Accept that `console.log` inside generators will re-execute on replay.
 
 ---
 
@@ -175,12 +175,12 @@ If you use `Math.random()`, `Date.now()`, or `crypto.randomUUID()` between yield
 // WRONG — different ID on replay
 resonate.register("broken", function* (ctx: Context) {
   const id = crypto.randomUUID();  // Different on replay!
-  yield ctx.run(processWithId, id);
+  yield* ctx.run(processWithId, id);
 });
 
 // CORRECT — derive ID from stable inputs
 resonate.register("fixed", function* (ctx: Context, orderId: string) {
-  yield ctx.run(processWithId, `${orderId}-step-1`);
+  yield* ctx.run(processWithId, `${orderId}-step-1`);
 });
 ```
 
@@ -193,7 +193,7 @@ resonate.register("fixed", function* (ctx: Context, orderId: string) {
 curl -sf http://localhost:9090/metrics | head -3
 
 # How many requests has it processed?
-curl -s http://localhost:9090/metrics | grep resonate_requests_total
+curl -s http://localhost:9090/metrics | grep resonate_request_total
 
 # Snapshot of all internal state (promises, tasks, messages, timeouts)
 curl -s -X POST http://localhost:8001 \

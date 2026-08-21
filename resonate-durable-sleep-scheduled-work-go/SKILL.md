@@ -1,21 +1,22 @@
 ---
 name: resonate-durable-sleep-scheduled-work-go
-description: Implement durable sleep and recurring-work patterns in Go with Resonate — ctx.Sleep(time.Duration) inside workflows for timers, countdowns, reminders, and long-horizon delays that survive process restarts. The Go SDK has no top-level Schedule API yet; recurring work uses in-workflow ctx.Sleep loops or external cron → RPC. Use when a workflow must wait for hours or days, or when a function should run on a fixed schedule. Pre-release caveat: API surface may change before the first semver tag.
+description: Implement durable sleep and recurring-work patterns in Go with Resonate — ctx.Sleep(time.Duration) inside workflows for timers, countdowns, reminders, and long-horizon delays that survive process restarts; Resonate.Schedules() (shipped in 0.1.0) for direct cron-fired promises, plus in-workflow ctx.Sleep loops or external cron → RPC for recurring registered-function dispatch. Use when a workflow must wait for hours or days, or when a function should run on a fixed schedule. Verified against the resonate-sdk-go 0.1.0 tag.
 license: Apache-2.0
 ---
 
 # Resonate Durable Sleep + Scheduled Work — Go
 
-> **Pre-release caveat.** The Go SDK has no semver-tagged release yet, and — unlike the TypeScript/Rust SDKs — exposes **no top-level `Schedule` API**. This skill covers durable sleep (`ctx.Sleep`) and the available recurring-work patterns (in-workflow `ctx.Sleep` loops; external cron → `RPC`). Every code block is verified against `develop/go.mdx`, `example-durable-sleep-go`, and `example-countdown-go` at SDK commit `22076134651f`.
+> **Version note.** The Go SDK's first tagged release is [`0.1.0`](https://github.com/resonatehq/resonate-sdk-go/releases/tag/0.1.0) (`go get github.com/resonatehq/resonate-sdk-go@0.1.0` — the tag has no `v` prefix, so `@latest` does not resolve to it). `0.1.0` shipped a top-level `Schedules()` sub-client for direct cron-fired promises. This skill covers durable sleep (`ctx.Sleep`), the `Schedules()` sub-client, and the patterns for recurring *registered-function* dispatch (in-workflow `ctx.Sleep` loops; external cron → `RPC`). Every code block is verified against the `0.1.0` tag source, `example-durable-sleep-go`, and `example-countdown-go`.
 
 ## Overview
 
-Two related capabilities in the Go SDK:
+Three related capabilities in the Go SDK:
 
 1. **Durable sleep inside a workflow** — `ctx.Sleep(d time.Duration)` pauses execution; the worker process can exit and resume later without losing its place. The server holds the timer promise; cost is one promise record, not process uptime.
-2. **Recurring / periodic work** — there is no `resonate.schedule(...)` in Go yet. Use an in-workflow `ctx.Sleep` loop (bounded or long-running periodic task owned by one workflow) or an external cron that fires `r.RPC(...)` on each tick.
+2. **Direct cron schedules** — `r.Schedules().Create(...)` (shipped in `0.1.0`) creates a promise from a cron expression, on a recurring basis, without any workflow involved. This is the Go equivalent of Python's `resonate.schedules.create(...)` sub-client.
+3. **Recurring registered-function dispatch** — Go's `0.1.0` tag does not yet have the top-level `resonate.schedule(id, cron, fn, args)` convenience wrapper that Python/TypeScript/Rust expose, which dispatches a *registered function* on the cron. Until it lands, use an in-workflow `ctx.Sleep` loop (bounded or long-running periodic task owned by one workflow), an external cron that fires `r.RPC(...)` on each tick, or `Schedules().Create` with the dispatch tags set by hand (shown below).
 
-Both patterns are durable: Resonate holds the continuation in its store, not in a long-running goroutine.
+All three are durable: Resonate holds the continuation (or the schedule) in its store, not in a long-running goroutine.
 
 ## When to use
 
@@ -154,11 +155,47 @@ func birthdayGreeting(ctx *resonate.Context, args BirthdayArgs) (struct{}, error
 }
 ```
 
-## Scheduled / recurring work without a Schedule API
+## `Resonate.Schedules()` — direct cron-fired promises
 
-**`resonate.schedule(...)` does not exist in the Go SDK.** The go.mdx docs include an explicit callout: "No `Schedule` or top-level promises sub-client yet." Do not translate Rust or TypeScript schedule examples directly — the API is absent.
+`r.Schedules()` (a top-level Client API, called from the ephemeral world — not a Context method) creates a schedule that fires a fresh promise on every cron tick, from a promise ID template:
 
-Two available substitutes:
+```go
+ctx := context.Background()
+
+// Fires a fresh promise every night at 00:00, from the report-{{.timestamp}} template.
+s, err := r.Schedules().Create(ctx, "nightly-report", "0 0 * * *", "report-{{.timestamp}}", time.Hour,
+    resonate.ScheduleCreateOptions{PromiseParam: ReportArgs{Region: "us"}})
+if err != nil {
+    log.Fatalf("Schedules().Create: %v", err)
+}
+
+s, err = r.Schedules().Get(ctx, "nightly-report")
+err = r.Schedules().Delete(ctx, "nightly-report")
+```
+
+This creates the promise directly — nobody is dispatched to run a registered function unless you arrange it. `Schedules().Create` does not exist to wrap Rust or TypeScript's `resonate.schedule(id, cron, fn, args)` examples 1:1 — translating those verbatim (expecting a function to run automatically) will compile but the promise it creates will just sit there for a worker to notice, not auto-dispatch.
+
+**To dispatch a registered function on the cron** (matching Rust/TypeScript's `resonate.schedule(...)` behavior), set the dispatch tags and param shape by hand — the same shape `RegisteredFunc.Run` and `Resonate.RPC` build internally:
+
+```go
+s, err := r.Schedules().Create(ctx, "nightly-reconciliation", "0 2 * * *",
+    "recon-{{.timestamp}}", 24*time.Hour,
+    resonate.ScheduleCreateOptions{
+        PromiseParam: map[string]any{
+            "func": "reconcile", // must match the name passed to resonate.Register
+            "args": ReconArgs{Date: "{{.timestamp}}"},
+        },
+        PromiseTags: map[string]string{
+            "resonate:target": "poll://any@default", // routes to a worker group, like RunOptions.Target
+        },
+    })
+```
+
+A worker polling that target picks up each fired promise as an ordinary task, same as an `RPC` dispatch. This is a manual assembly of what a future top-level `resonate.Schedule(...)` wrapper would do for you — verify the exact param/tag shape against `buildRootPromiseCreateReq` in `resonate.go` before shipping, since it is not a documented public contract.
+
+## Recurring work without the function-dispatch convenience wrapper
+
+Two further substitutes for recurring *registered-function* dispatch, useful when you'd rather not hand-assemble the dispatch tags above:
 
 ### Pattern 1 — In-workflow `ctx.Sleep` loop
 
@@ -248,14 +285,15 @@ resonate invoke nightly-reconciliation --id "nightly-recon/$(date +%F)" --data '
 
 - **`time.Sleep` inside a durable function** — ephemeral; lost on crash; holds the goroutine for the full duration. Use `ctx.Sleep`.
 - **Un-checkpointed side effects before a sleep** — any code that runs before a `ctx.Sleep` (or any other durable boundary) re-executes on resume. Wrap observable side effects (DB writes, emails, webhooks) in `ctx.Run`/`ctx.RPC` so the durable promise records the result and short-circuits replay.
-- **Assuming a `Schedule` API exists in Go** — it does not; translating Rust or TypeScript `resonate.schedule(...)` code verbatim will not compile. Use the two patterns above.
+- **Assuming `Schedules().Create` auto-dispatches a registered function** — it creates the cron-fired promise only; translating Rust or TypeScript `resonate.schedule(...)` code verbatim compiles but nothing consumes the fired promise unless you set the `resonate:target` tag and `{func, args}` param shape yourself, or fall back to one of the patterns above.
 - **Clock precision assumptions** — `ctx.Sleep(24*time.Hour)` firing in 23–25h is within spec (server/worker drift). Don't treat variance of ±1h as a bug for long-horizon sleeps.
 - **Raw `time.Duration` nanoseconds in promise payloads** — store durations as explicit integer fields (seconds, minutes) to keep promise data human-readable across crashes and inspections.
 
 ## Related skills
 
 - `resonate-basic-durable-world-usage-go` — `ctx.Run`, `ctx.RPC`, `ctx.Promise` fundamentals; the same Context the `ctx.Sleep` API lives on
+- `resonate-basic-ephemeral-world-usage-go` — `Resonate.Promises()` / `Resonate.Schedules()` sub-client reference (Client APIs, not Context APIs)
 - `durable-execution` — foundational replay semantics; sleep is a durability checkpoint by design
-- `resonate-durable-sleep-scheduled-work-typescript` — TypeScript sibling; has `resonate.schedule()` (cron strings, ms durations)
-- `resonate-durable-sleep-scheduled-work-rust` — Rust sibling; has `resonate.schedule()` (cron strings, `std::time::Duration`)
-- **SDK gap note:** both Go and Python lack a top-level `schedule()` as of this writing; TypeScript and Rust have it. If porting a scheduled workflow from Rust/TypeScript to Go, replace `resonate.schedule(...)` with one of the two patterns in the "Scheduled / recurring work" section above.
+- `resonate-durable-sleep-scheduled-work-typescript` — TypeScript sibling; has the top-level `resonate.schedule()` function-dispatch wrapper (cron strings, ms durations)
+- `resonate-durable-sleep-scheduled-work-rust` — Rust sibling; has the top-level `resonate.schedule()` function-dispatch wrapper (cron strings, `std::time::Duration`)
+- **SDK gap note:** Go's `0.1.0` `Schedules()` sub-client covers direct cron-fired promises (like Python's `schedules.create(...)` sub-client), but Go alone still lacks the higher-level top-level `schedule(id, cron, fn, args)` convenience wrapper that dispatches a registered function — Python (0.7.4), TypeScript, and Rust all have one. If porting a scheduled workflow from Python/Rust/TypeScript to Go, either hand-assemble the dispatch tags (see above) or use one of the two patterns in the "Recurring work" section.

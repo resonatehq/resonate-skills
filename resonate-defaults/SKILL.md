@@ -56,12 +56,13 @@ When the canonical page does not answer the question, read these files directly.
 
 ### Go SDK ([`resonatehq/resonate-sdk-go`](https://github.com/resonatehq/resonate-sdk-go))
 
-Pre-release — no semver tag yet; values verified against `develop/go.mdx` and the SDK at commit `22076134651f`. The canonical doc-page summary lives in the [Go SDK skill guide § Defaults](https://docs.resonatehq.io/develop/go#defaults).
+Tagged `0.1.0` (the tag has no `v` prefix — `go get github.com/resonatehq/resonate-sdk-go@0.1.0` to pin it; `@latest` does not resolve to the tag). Values verified against the `0.1.0` tag source. The canonical doc-page summary lives in the [Go SDK skill guide § Defaults](https://docs.resonatehq.io/develop/go#defaults).
 
 - `resonate.go` — `Config` defaults (`TTL` 60s, `AsyncHeartbeat`, `NoopEncryptor`, empty `Prefix`), `New` network resolution (`URL` → `Network` → `RESONATE_URL` → `ErrNetworkRequired`), `DefaultTopLevelTimeout`, `DefaultRetryPolicy`
 - `context.go` — child-call defaults (`DefaultChildTimeout`), `RunOpts`/`RPCOpts`/`PromiseOpts`/`DetachedOpts`
 - the retry-policy types (`ConstantRetry`, `LinearRetry`, `ExponentialRetry`, `NoRetry`) and `NewNonRetryable`
 - `httpnet/http.go` — `HTTPOptions{Group}` (the default group is `"default"`); groups are set on the transport, not on `Config`
+- `promises.go` / `schedules.go` — the direct `Promises` / `Schedules` sub-clients (`PromiseCreateOptions`, `ScheduleCreateOptions`, `DefaultTopLevelTimeout` as their timeout fallback)
 
 ### Server ([`resonatehq/resonate`](https://github.com/resonatehq/resonate))
 
@@ -162,7 +163,7 @@ The defaults look like they line up across SDKs. They do not. Flag these explici
 - **Time units differ.** TypeScript expresses durations in **milliseconds**. Python expresses durations in **seconds**. Rust is **mixed** — `Options.timeout` is a `Duration`, but `ttl` is `u64` milliseconds. **Go uses native `time.Duration` everywhere** (`24 * time.Hour`, `100 * time.Millisecond`) — never a raw number. A naive copy-paste between SDKs is almost always wrong.
 - **Go's default retry policy is BOUNDED.** TS and Py default to effectively-unbounded retries (`Number.MAX_SAFE_INTEGER` / `sys.maxsize`). Go's `DefaultRetryPolicy` caps at `MaxAttempts: 3`. A Go workflow gives up after 3 attempts where the TS/Py equivalent would retry almost forever. This is load-bearing when porting — do not assume Go inherits the unbounded default.
 - **Per-call retry policy: Go HAS one, Rust does NOT.** Go's `RunOptions`/`RunOpts` carry a `RetryPolicy` field (like TS/Py); Rust has no per-call retry policy (server-side `--tasks-retry-timeout` governs it). Go is the TS/Py side of this split, not the Rust side.
-- **Go has no `Schedule` API and no top-level promises sub-client (yet).** External promise resolution (human-in-the-loop, webhooks) goes through the CLI (`resonate promise resolve`), the server HTTP API, or the low-level `r.Sender().PromiseSettle` (with manual JSON→base64→quoted-string `Value` encoding — [issue #28](https://github.com/resonatehq/resonate-sdk-go/issues/28)); recurring work has no `resonate.schedule(...)` equivalent. Go and Python both lack `schedule()`; TS and Rust have it.
+- **Go's `0.1.0` tag shipped direct `Promises()` and `Schedules()` sub-clients.** `r.Promises().Resolve/Reject/Cancel/Create/Get` and `r.Schedules().Create/Get/Delete` are real methods now — prefer them over the CLI, the server HTTP API, or the low-level `r.Sender().PromiseSettle` (that low-level path still requires manual JSON→base64→quoted-string `Value` encoding; the sub-client methods do it for you via the instance's `Codec`). The remaining Go gap is a top-level `resonate.Schedule(id, cron, fn, args)` convenience wrapper that dispatches a *registered function* by name on a cron — Python, TypeScript, and Rust all have one; Go's `Schedules().Create` only creates the underlying cron-fired promise, so dispatching a registered function through it means setting the `resonate:target` tag and `{"func":...,"args":...}` param shape by hand.
 - **`Options.timeout` envelope.** TypeScript and Rust default to **24 h**. Python defaults to **1 year** (`31_536_000` seconds). Same field, drastically different upper bound.
 - **`ttl` unit and value.** TypeScript and Rust = `60_000` ms (= 60 s). Python = `10` sec. Same name, different unit *and* different value.
 - **Retry-policy time units.** TS retry-policy parameters are in **milliseconds**; Python's are in **seconds**. The curve shape is identical; the numbers are not.

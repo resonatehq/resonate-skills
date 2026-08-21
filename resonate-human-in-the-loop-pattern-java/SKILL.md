@@ -1,6 +1,6 @@
 ---
 name: resonate-human-in-the-loop-pattern-java
-description: Implement human-in-the-loop workflows in Java with the Resonate SDK — durable functions that park on ctx.promise() until an external actor settles the latent promise. Unlike the Go SDK, the Java SDK ships an r.promises sub-client, so external resolution is a clean r.promises.resolve(id, new Value(...)) call (or the CLI / server HTTP API) with no manual base64 encoding. Use for approval gates, webhook callbacks, and operator unblock steps. Verified against develop/java.mdx (docs PR #230) and the resonate-sdk-java source at io.resonatehq:resonate-sdk-java:0.1.1.
+description: Implement human-in-the-loop workflows in Java with the Resonate SDK — durable functions that park on ctx.promise() until an external actor settles the latent promise. The Java SDK ships an r.promises sub-client, so external resolution is a clean r.promises.resolve(id, new Value(...)) call (or the CLI / server HTTP API) with no manual base64 encoding — the Go SDK's 0.1.0 tag now has the same Promises() sub-client, with manual base64 encoding only on its low-level Sender().PromiseSettle fallback. Use for approval gates, webhook callbacks, and operator unblock steps. Verified against develop/java.mdx (docs PR #230) and the resonate-sdk-java source at io.resonatehq:resonate-sdk-java:0.1.1.
 license: Apache-2.0
 ---
 

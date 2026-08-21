@@ -39,9 +39,9 @@ transform, and reach for the linked per-SDK skill for idiomatic target code.
 | SDK | Resonate (target) | DBOS (source) |
 |---|---|---|
 | TypeScript | `@resonatehq/sdk` v0.11.4 (npm) | `@dbos-inc/dbos-sdk` v4.19.8 (npm) |
-| Python | `resonate-sdk` v0.6.7 (PyPI) | `dbos` v2.23.0 (PyPI) |
+| Python | `resonate-sdk` v0.7.4 (PyPI) | `dbos` v2.23.0 (PyPI) |
 | Rust | `resonate-sdk` v0.6.0 (crates.io) | — (no DBOS Rust SDK) |
-| Go | pre-release, tracks `main` | `dbos-transact-golang` v0.17.0 |
+| Go | `0.1.0` (tag has no `v` prefix — `go get github.com/resonatehq/resonate-sdk-go@0.1.0`) | `dbos-transact-golang` v0.17.0 |
 
 ## Core mappings (apply everywhere)
 
@@ -141,8 +141,11 @@ transform, and reach for the linked per-SDK skill for idiomatic target code.
   `dbos-transact-ts/tests/scheduler_decorator.test.ts`, `dbos-transact-golang` README.
 - **RESONATE TARGET:** `example-schedule-{ts,py,rs}`.
 - **RELATED SKILL:** `resonate-durable-sleep-scheduled-work-{typescript,rust,go}`.
-- **COVERAGE:** ts ✅ py ✅ rs ✅ go ⚠️ (no `example-schedule-go` yet — the Go
-  schedules API is new and tracks `main`; map by analogy).
+- **COVERAGE:** ts ✅ py ✅ rs ✅ go ⚠️ (no `example-schedule-go` yet; Go's `0.1.0`
+  `Schedules().Create` covers the direct cron-fired-promise half, but there is no
+  top-level `resonate.Schedule(id, cron, fn, args)` convenience wrapper yet — map
+  by analogy, or set the `resonate:target` dispatch tag by hand, per
+  `resonate-durable-sleep-scheduled-work-go`).
 
 ## Pattern: Communication → durable promises (human-in-the-loop)
 
@@ -158,19 +161,21 @@ transform, and reach for the linked per-SDK skill for idiomatic target code.
   - ts (0.11.4): the `data` field is base64-encoded JSON —
     `const data = Buffer.from(JSON.stringify(v), "utf8").toString("base64"); resonate.promises.resolve(id, { data })`
     (the codec base64-decodes `data`, so a raw `JSON.stringify(v)` round-trips to garbage)
-  - py (0.6.7): `resonate.promises.resolve(id=…, ikey=…)` — the
-    `example-human-in-the-loop-py` gateway resolves by id with an idempotency key,
-    not a data payload; confirm the kwargs against the example before emitting.
+  - py (0.7.4): `await resonate.promises.resolve(id, value)` — positional `id`
+    and a `Value`, not `resolve(id=…, ikey=…)`; there is no `ikey` kwarg on
+    `Promises.resolve` in this release. Confirm the exact call shape against
+    `example-human-in-the-loop-py` before emitting.
   - rs (0.6.0): `resonate.promises.resolve(&id, Value::from_serializable(v)?)`
     (the example repo may use `json!(v)` — verify it compiles against your released crate version; use the `Value` form if not)
-  - go (main): **no high-level resolve yet** — use the CLI
-    `resonate promises resolve <id> --value '{"headers":{},"data":"…"}'` or the
-    lower-level sender/promise-settle path.
+  - go (0.1.0): `r.Promises().Resolve(ctx, id, v)` — the direct `Promises()`
+    sub-client handles the codec encoding for you. The CLI
+    (`resonate promises resolve <id> --value '{"headers":{},"data":"…"}'`) and the
+    lower-level sender/promise-settle path remain available.
 - **DBOS SOURCE:** `dbos-demo-apps/{python,typescript,golang}/widget-store`,
   `dbos-demo-apps/python/agent-inbox` (richer HITL with `recv` + `set_event`).
 - **RESONATE TARGET:** `example-human-in-the-loop-{ts,py,rs,go}`.
 - **RELATED SKILL:** `resonate-human-in-the-loop-pattern-{typescript,python,rust,go}`.
-- **COVERAGE:** ts ✅ py ✅ rs ✅ go ✅ (Go resolve is lower-level).
+- **COVERAGE:** ts ✅ py ✅ rs ✅ go ✅ (`0.1.0` has a direct `Promises().Resolve`; the CLI and low-level `Sender().PromiseSettle` remain as alternates).
 
 ## Pattern: Saga / compensation
 

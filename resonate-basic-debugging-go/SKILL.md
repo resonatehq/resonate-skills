@@ -1,12 +1,12 @@
 ---
 name: resonate-basic-debugging-go
-description: Debug and troubleshoot Resonate applications using the Go SDK. Use when investigating stuck or never-resuming workflows, duplicated side effects after replay, promise decode errors, latent-promise settlement encoding traps, localnet heartbeat failures, or the pre-release caveats of the Go SDK. Pre-release: no semver tag yet; pin a commit for stability.
+description: Debug and troubleshoot Resonate applications using the Go SDK. Use when investigating stuck or never-resuming workflows, duplicated side effects after replay, promise decode errors, latent-promise settlement encoding traps on the low-level Sender().PromiseSettle path, localnet heartbeat failures, or version caveats of the Go SDK. Verified against the resonate-sdk-go 0.1.0 tag.
 license: Apache-2.0
 ---
 
 # Resonate Basic Debugging — Go
 
-> **Pre-release caveat.** The Go SDK has no semver-tagged release yet — `go get …@latest` resolves to a pseudo-version; pin a commit for stability. APIs may change before the first tag is cut. Every code block here is verified against `develop/go.mdx` and the `resonatehq-examples/*-go` repos at SDK commit `22076134651f`.
+> **Version note.** The Go SDK's first tagged release is [`0.1.0`](https://github.com/resonatehq/resonate-sdk-go/releases/tag/0.1.0). The tag is `0.1.0`, not `v0.1.0`, so `go get …@latest` does not resolve to it — pin the tag explicitly: `go get github.com/resonatehq/resonate-sdk-go@0.1.0`. APIs may still change before a `1.0`. Every code block here is verified against the `0.1.0` tag source and the `resonatehq-examples/*-go` repos.
 
 ## Overview
 
@@ -32,18 +32,24 @@ For the language-agnostic replay and recovery mental model, read `durable-execut
 **Symptom:** `Future.Await` blocks indefinitely; `resonate promise get <id>` shows state `pending`.
 
 **Causes:**
-- The external actor never called `PromiseSettle` / `resonate promise resolve <id>`.
+- The external actor never called `Promises().Resolve` / `PromiseSettle` / `resonate promise resolve <id>`.
 - The promise was settled but the value encoding is wrong — `Future.Await` fails with a decode error and the workflow re-suspends.
 
-The external settlement path via `r.Sender().PromiseSettle` requires the value to be encoded as JSON → base64 → quoted string stored in `Value.Data`. Using `resonate.NewValue(x)` stores raw JSON without the base64 layer, so `Future.Await` fails silently with a decode error (sdk-go issue #28):
+**Fix: settle through `r.Promises().Resolve(id, v)` (or `.Reject` / `.Cancel`).** These route the value through the instance's `Codec` — the same encode path the workflow machinery uses — so this class of bug does not happen on that path:
 
 ```go
-// WRONG — NewValue stores raw JSON; Codec.Decode fails with a base64 error.
+rec, err := r.Promises().Resolve(ctx, promiseID, decision)
+```
+
+**If you're on the low-level `r.Sender().PromiseSettle` path instead** (bypassing the `Promises()` sub-client — e.g. resolving from a non-Go process's wire-compatible payload), the value must be encoded by hand as JSON → base64 → quoted string stored in `Value.Data`. Using `resonate.NewValue(x)` on that path stores raw JSON without the base64 layer, so `Future.Await` fails silently with a decode error:
+
+```go
+// WRONG on the low-level path — NewValue stores raw JSON; Codec.Decode fails with a base64 error.
 val, _ := resonate.NewValue(decision)
 ```
 
 ```go
-// CORRECT — JSON → base64 → JSON-quoted string.
+// CORRECT on the low-level path — JSON → base64 → JSON-quoted string.
 rawJSON, _ := json.Marshal(decision)
 b64 := base64.StdEncoding.EncodeToString(rawJSON)
 quotedB64, _ := json.Marshal(b64)
@@ -57,7 +63,7 @@ settleReq := resonate.PromiseSettleReq{
 _, err := r.Sender().PromiseSettle(ctx, settleReq)
 ```
 
-There is no compile-time or runtime warning at the settle call site. The failure only surfaces inside `Future.Await` on the workflow side. Until sdk-go issue #28 lands a higher-level `Promises().Resolve` API, replicate the encoding above exactly.
+There is no compile-time or runtime warning at the settle call site. The failure only surfaces inside `Future.Await` on the workflow side. The simplest fix is usually to stop bypassing the codec: switch to `r.Promises().Resolve(...)`.
 
 ### `ctx.Run` leaf blocks indefinitely
 
@@ -233,7 +239,8 @@ See the `resonate-cli` skill for the full command surface. The CLI is SDK-agnost
 ## Related skills
 
 - `resonate-basic-durable-world-usage-go` — Context APIs (`ctx.Run`, `ctx.RPC`, `ctx.Sleep`, `ctx.Promise`)
-- `resonate-human-in-the-loop-pattern-go` — latent promise settlement, `PromiseSettle` encoding detail
+- `resonate-basic-ephemeral-world-usage-go` — `r.Promises()` / `r.Schedules()` sub-client reference
+- `resonate-human-in-the-loop-pattern-go` — latent promise settlement, `Promises().Resolve` and the low-level `PromiseSettle` encoding detail
 - `resonate-cli` — full CLI command surface for promise inspection and settlement
 - `resonate-defaults` — default TTL, retry policy, and timeout values across all SDKs
 - `durable-execution` — foundational replay and recovery model

@@ -1,6 +1,6 @@
 ---
 name: resonate-durable-sleep-scheduled-work-java
-description: Implement durable sleep and scheduled/recurring work in Java with Resonate — ctx.sleep(Duration) inside workflows for timers, countdowns, reminders, and long-horizon delays that survive process restarts, plus the top-level r.schedule(...) cron API (and the r.schedules sub-client) for periodic invocation of a registered function. The Java SDK ships a Schedule API (the Go SDK does not). Use when a workflow must wait for hours or days, or when a function should run on a fixed cron schedule. Verified against example-countdown-java / example-quickstart-java and develop/java.mdx (docs PR #230) at io.resonatehq:resonate-sdk-java:0.1.1.
+description: Implement durable sleep and scheduled/recurring work in Java with Resonate — ctx.sleep(Duration) inside workflows for timers, countdowns, reminders, and long-horizon delays that survive process restarts, plus the top-level r.schedule(...) cron API (and the r.schedules sub-client) for periodic invocation of a registered function. Java's r.schedule(...) is a one-call function-dispatch convenience the Go SDK doesn't have yet (Go 0.1.0 has the lower-level Schedules() sub-client instead). Use when a workflow must wait for hours or days, or when a function should run on a fixed cron schedule. Verified against example-countdown-java / example-quickstart-java and develop/java.mdx (docs PR #230) at io.resonatehq:resonate-sdk-java:0.1.1.
 license: Apache-2.0
 ---
 
@@ -13,7 +13,7 @@ license: Apache-2.0
 Two related capabilities in the Java SDK:
 
 1. **Durable sleep inside a workflow** — `ctx.sleep(Duration)` pauses execution; the worker process can exit and resume later without losing its place. The server holds the timer promise; the cost is one promise record, not process uptime.
-2. **Scheduled / recurring work** — `r.schedule(...)` registers a cron schedule that periodically invokes a registered function. The Java SDK includes a top-level Schedule API (plus the lower-level `r.schedules` sub-client); the Go SDK does not expose one yet. This removes the need for an in-workflow sleep loop or an external cron trigger.
+2. **Scheduled / recurring work** — `r.schedule(...)` registers a cron schedule that periodically invokes a registered function. The Java SDK includes this top-level Schedule API (plus the lower-level `r.schedules` sub-client); Go's `0.1.0` tag has the lower-level `Schedules()` sub-client (direct cron-fired promises) but not this same one-call function-dispatch convenience yet. This removes the need for an in-workflow sleep loop or an external cron trigger.
 
 Both patterns are durable: Resonate holds the continuation (or the schedule) in its store, not in a long-running thread.
 

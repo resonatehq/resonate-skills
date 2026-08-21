@@ -6,7 +6,7 @@ license: Apache-2.0
 
 # Resonate Durable Sleep + Scheduled Work — Rust
 
-> **SDK note (0.6.0).** The Rust SDK is in active development. This skill covers two features in the current release: `ctx.sleep(Duration)` for in-workflow durable sleep, and `resonate.schedule(name, cron, fn, input)` for cron-registered ephemeral-world scheduling. (Note: the Python SDK does not yet expose a top-level `schedule()`; Rust does.)
+> **SDK note (0.6.0).** The Rust SDK is in active development. This skill covers two features in the current release: `ctx.sleep(Duration)` for in-workflow durable sleep, and `resonate.schedule(name, cron, fn, input)` for cron-registered ephemeral-world scheduling. (Note: Python's `resonate-sdk` 0.7.4 also has a top-level `resonate.schedule(...)` now — confirmed against the installed package; see the cross-SDK asymmetry note below for what's still Rust/TypeScript-only.)
 
 ## Overview
 
@@ -177,7 +177,7 @@ async fn daily_digest(ctx: &Context, _input: serde_json::Value) -> Result<()> {
 - **`tokio::signal::ctrl_c().await`** for graceful-shutdown waits in the ephemeral-world binary
 - **`serde_json::json!({ ... })`** for structured schedule input
 - **`Schedule::delete().await?`** — the handle from `resonate.schedule(...)` is the delete API
-- **Cross-SDK asymmetry:** Python's v0.6.7 SDK has no equivalent `resonate.schedule(...)`; Rust has it (0.6.0). TypeScript has it. If you're porting a scheduled workflow across SDKs, this asymmetry is load-bearing
+- **Cross-SDK asymmetry:** Python (0.7.4), TypeScript, and Rust (0.6.0) all expose the same shape of top-level `resonate.schedule(...)` convenience wrapper. Go's `0.1.0` tag is the odd one out — it has the lower-level `Schedules().Create` sub-client (direct cron-fired promises) but not this same one-call function-dispatch wrapper yet. If you're porting a scheduled workflow to Go, see `resonate-durable-sleep-scheduled-work-go` for the manual dispatch-tag workaround
 
 ## Avoid
 
@@ -190,4 +190,5 @@ async fn daily_digest(ctx: &Context, _input: serde_json::Value) -> Result<()> {
 - `resonate-basic-durable-world-usage-rust` — `ctx.sleep` API
 - `resonate-basic-ephemeral-world-usage-rust` — `resonate.schedule` API
 - `durable-execution` — foundational replay semantics; sleep + schedule are durability-centered by design
-- `resonate-durable-sleep-scheduled-work-typescript` — sibling SDK for comparison (Python equivalent does not exist at v0.6.7; see README)
+- `resonate-durable-sleep-scheduled-work-typescript` — sibling SDK for comparison (Python's `resonate-sdk` 0.7.4 has the equivalent `resonate.schedule(...)`; see README)
+- `resonate-durable-sleep-scheduled-work-go` — Go's `0.1.0` `Schedules()` sub-client is lower-level than this API; no top-level function-dispatch wrapper yet

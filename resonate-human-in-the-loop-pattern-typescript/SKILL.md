@@ -12,14 +12,14 @@ license: Apache-2.0
 
 The Human-in-the-Loop (HITL) pattern enables workflows to pause execution and wait for human input—decisions, approvals, reviews, or interventions. The workflow suspends (not blocks resources) and resumes exactly where it left off when the human responds, whether that's seconds, hours, or days later.
 
-**Core mechanism:** Create a durable promise with an explicit ID, communicate that ID to a human (via email, UI, webhook), and `yield*` await the promise until it's externally resolved.
+**Core mechanism:** Create a durable promise, read the ID the SDK generates for it, communicate that ID to a human (via email, UI, webhook), and `yield*` await the promise until it's externally resolved.
 
 ## Mental Model
 
 ```
 Workflow                          Human
    │                                │
-   ├─ Create promise (ID: "approval-123")
+   ├─ Create promise, read its ID  │
    ├─ Send email with links        │
    │  (accept_link, reject_link)   │
    │                                │
@@ -37,13 +37,12 @@ Workflow                          Human
 
 ## Core Pattern
 
-### Step 1: Create Durable Promise with Explicit ID
+### Step 1: Create the Durable Promise
 
 ```typescript
 function* approvalWorkflow(ctx: Context, orderId: string) {
-  // Create promise with EXPLICIT ID so external resolver can find it
+  // ctx.promise() generates the ID itself — you don't choose one
   const approvalPromise = yield* ctx.promise<Decision>({
-    id: `approval/${orderId}`,
     timeout: 24 * 60 * 60 * 1000  // 24 hours
   });
 
@@ -51,15 +50,13 @@ function* approvalWorkflow(ctx: Context, orderId: string) {
 }
 ```
 
-**Why explicit ID?** The human (or webhook) needs to know which promise to resolve. Auto-generated IDs are deterministic but not communicable.
+**Why read the ID back?** The human (or webhook) needs to know which promise to resolve, and the SDK's auto-generated ID is the only ID there is. It's deterministic across replay — the sequence advances in call order — so `approvalPromise.id` is safe to hand to anything outside the workflow.
 
 ### Step 2: Communicate Promise ID
 
 ```typescript
 function* approvalWorkflow(ctx: Context, orderId: string) {
-  const approvalPromise = yield* ctx.promise<Decision>({
-    id: `approval/${orderId}`
-  });
+  const approvalPromise = yield* ctx.promise<Decision>();
 
   // Send email with accept/reject links containing promise ID
   yield* ctx.run(sendApprovalEmail, orderId, approvalPromise.id);
@@ -86,7 +83,6 @@ async function sendApprovalEmail(_ctx: Context, orderId: string, promiseId: stri
 ```typescript
 function* approvalWorkflow(ctx: Context, orderId: string) {
   const approvalPromise = yield* ctx.promise<Decision>({
-    id: `approval/${orderId}`,
     timeout: 24 * 60 * 60 * 1000
   });
 
@@ -149,9 +145,8 @@ function* createOrderWithApproval(ctx: Context, orderData: any) {
   // 1. Create order record
   const order = yield* ctx.run(createOrderRecord, orderData);
 
-  // 2. Create approval promise
+  // 2. Create approval promise — the SDK generates the ID
   const approvalPromise = yield* ctx.promise<ApprovalDecision>({
-    id: `approval/${order.id}`,
     timeout: 48 * 60 * 60 * 1000  // 48 hours
   });
 
@@ -244,10 +239,8 @@ app.listen(3000);
 
 ```typescript
 function* multiStageApproval(ctx: Context, orderId: string) {
-  // Stage 1: Manager approval
-  const managerPromise = yield* ctx.promise({
-    id: `approval/${orderId}/manager`
-  });
+  // Stage 1: Manager approval — each ctx.promise() call gets its own auto-generated ID
+  const managerPromise = yield* ctx.promise();
   yield* ctx.run(sendManagerApproval, orderId, managerPromise.id);
   const managerDecision = yield* managerPromise;
 
@@ -256,9 +249,7 @@ function* multiStageApproval(ctx: Context, orderId: string) {
   }
 
   // Stage 2: Finance approval
-  const financePromise = yield* ctx.promise({
-    id: `approval/${orderId}/finance`
-  });
+  const financePromise = yield* ctx.promise();
   yield* ctx.run(sendFinanceApproval, orderId, financePromise.id);
   const financeDecision = yield* financePromise;
 
@@ -274,16 +265,17 @@ function* multiStageApproval(ctx: Context, orderId: string) {
 
 ```typescript
 function* parallelApproval(ctx: Context, orderId: string) {
-  // Create promises for multiple approvers
-  const alice = yield* ctx.promise({ id: `approval/${orderId}/alice` });
-  const bob = yield* ctx.promise({ id: `approval/${orderId}/bob` });
-  const carol = yield* ctx.promise({ id: `approval/${orderId}/carol` });
+  // Create one promise per approver — the SDK generates a unique ID for each
+  const alice = yield* ctx.promise();
+  const bob = yield* ctx.promise();
+  const carol = yield* ctx.promise();
 
-  // Send requests to all
+  // Pair each approver's name with their promise ID when sending requests,
+  // since the ID itself no longer tells you whose approval it is
   yield* ctx.run(sendApprovalRequests, orderId, [
-    alice.id,
-    bob.id,
-    carol.id
+    { approver: "alice", promiseId: alice.id },
+    { approver: "bob", promiseId: bob.id },
+    { approver: "carol", promiseId: carol.id }
   ]);
 
   // Race: first to respond wins
@@ -304,8 +296,9 @@ function* parallelApproval(ctx: Context, orderId: string) {
 ```typescript
 function* approvalWithRetry(ctx: Context, orderId: string, maxAttempts: number = 3) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // ctx.promise() at the same point in the sequence gets a distinct,
+    // replay-stable ID on every iteration — no manual attempt-numbering needed
     const promise = yield* ctx.promise({
-      id: `approval/${orderId}/attempt-${attempt}`,
       timeout: 24 * 60 * 60 * 1000
     });
 
@@ -330,31 +323,34 @@ function* approvalWithRetry(ctx: Context, orderId: string, maxAttempts: number =
 
 ## Worked Example: Multi-Participant Approval
 
-A complete workflow that creates a record, emails each participant an accept/reject link, suspends until every participant responds (or times out), and returns the collective decision:
+A complete workflow that creates one promise per participant, records their auto-generated IDs, emails each participant an accept/reject link, suspends until every participant responds (or times out), and returns the collective decision:
 
 ```typescript
 function* approvalWorkflow(ctx: Context, input: ApprovalInput) {
-  // Create approval record in database
-  const approval = yield* ctx.rpc("dbCreateApproval", input, ctx.options({
-    target: "poll://any@database-service"
-  }));
-
-  // Create promises for each participant
+  // Create one promise per participant first — we need their auto-generated
+  // IDs before we can create the database record or send the emails
   const promises = [];
-  for (const [index, promiseId] of input.promise_ids.entries()) {
-    const email = input.participant_emails[index];
-
+  for (const email of input.participant_emails) {
     const handle = yield* ctx.promise({
-      id: promiseId,
       timeout: input.participant_timeout_ms,
       tags: { approval_id: input.approval_id, participant_email: email }
     });
-    promises.push({ promiseId, handle });
+    promises.push({ email, handle });
+  }
 
-    // Send email with accept/reject links
+  // Create approval record in database, now that every promise ID is known
+  const approval = yield* ctx.rpc("dbCreateApproval", {
+    ...input,
+    promise_ids: promises.map(p => p.handle.id)
+  }, ctx.options({
+    target: "poll://any@database-service"
+  }));
+
+  // Email each participant their accept/reject link
+  for (const { email, handle } of promises) {
     yield* ctx.rpc("sendApprovalEmail", {
       participant_email: email,
-      promise_id: promiseId,
+      promise_id: handle.id,
       approval_name: input.approval_name
     }, ctx.options({ target: "poll://any@emailer-service" }));
   }
@@ -377,34 +373,31 @@ function* approvalWorkflow(ctx: Context, input: ApprovalInput) {
 }
 ```
 
-## Promise ID Strategy
+## Promise IDs Are Auto-Generated
 
-**Determinism is critical.** Promise IDs must be reproducible on replay:
+`ctx.promise()` doesn't take an `id` option. The SDK generates one from a per-workflow sequence counter, and that ID is stable across replay because the counter advances in call order — the same call in the same position always produces the same ID:
 
 ```typescript
-// ❌ BAD - Non-deterministic
+// ❌ WRONG - `id` isn't a valid ctx.promise() option; TypeScript rejects
+// the excess property, and if you force it through anyway, it's silently
+// discarded at runtime
 const promise = yield* ctx.promise({
-  id: `approval/${Date.now()}`  // Different on replay!
+  id: `approval/${orderId}`
 });
 
-// ❌ BAD - Non-deterministic
-const promise = yield* ctx.promise({
-  id: `approval/${Math.random()}`  // Different on replay!
-});
+// ✅ CORRECT - create the promise, then read the generated ID back off it
+const promise = yield* ctx.promise<Decision>();
+yield* ctx.run(sendApprovalEmail, orderId, promise.id);
+```
 
-// ✅ GOOD - Deterministic
-const promise = yield* ctx.promise({
-  id: `approval/${orderId}`  // Same on replay
-});
+If you need a deterministic value for something else in the workflow — a dedupe key, a filename, a random sample — use `ctx.date.now()` and `ctx.math.random()` instead of `Date.now()`/`Math.random()`. Both are recorded on first execution and replayed to the same value, so anything derived from them stays reproducible:
 
-// ✅ GOOD - Deterministic with counter
-let attempt = 1;
-const promise = yield* ctx.promise({
-  id: `approval/${orderId}/attempt-${attempt}`
-});
+```typescript
+// ❌ BAD - not recorded, a different value on every replay
+const label = `attempt-${Date.now()}`;
 
-// ✅ BEST - Auto-generated (if no external resolution needed)
-const promise = yield* ctx.promise();  // Resonate generates deterministic ID
+// ✅ GOOD - recorded on first run, identical on replay
+const label = `attempt-${yield* ctx.date.now()}`;
 ```
 
 ## Timeout Handling
@@ -422,7 +415,6 @@ Always set timeouts for HITL promises to prevent indefinite suspension.
 // SDK usage - duration from now
 function* approvalWithTimeout(ctx: Context, orderId: string) {
   const promise = yield* ctx.promise({
-    id: `approval/${orderId}`,
     timeout: 48 * 60 * 60 * 1000  // 48 hours (duration)
   });
 
@@ -454,9 +446,7 @@ For UI-based workflows, store promise IDs in database:
 
 ```typescript
 function* uiApprovalWorkflow(ctx: Context, orderId: string) {
-  const promise = yield* ctx.promise({
-    id: `approval/${orderId}`
-  });
+  const promise = yield* ctx.promise();
 
   // Store in database for UI to query
   yield* ctx.run(async () => {
@@ -494,31 +484,29 @@ const data = Buffer.from(JSON.stringify({ approved: true })).toString('base64');
 await resonate.promises.resolve(promiseId, { data });
 ```
 
-### 2. Non-Deterministic Promise IDs
+### 2. Passing an `id` to `ctx.promise()`
 
 ```typescript
-// ❌ WRONG
-const promise = yield* ctx.promise({
-  id: `approval-${Date.now()}`
-});
-
-// ✅ CORRECT
+// ❌ WRONG - `id` isn't a valid option; TypeScript rejects the excess
+// property, and even forced through it, the SDK silently discards it and
+// generates its own ID anyway
 const promise = yield* ctx.promise({
   id: `approval-${orderId}`
 });
+
+// ✅ CORRECT - let the SDK generate the ID, then read it back off the promise
+const promise = yield* ctx.promise();
+yield* ctx.run(notifyApprover, orderId, promise.id);
 ```
 
 ### 3. Missing Timeout
 
 ```typescript
 // ❌ WRONG - Can hang forever
-const promise = yield* ctx.promise({
-  id: `approval/${orderId}`
-});
+const promise = yield* ctx.promise();
 
 // ✅ CORRECT
 const promise = yield* ctx.promise({
-  id: `approval/${orderId}`,
   timeout: 24 * 60 * 60 * 1000
 });
 ```
@@ -546,4 +534,4 @@ The Human-in-the-Loop pattern enables workflows to:
 - Scale to thousands of concurrent pending decisions
 - Maintain full durability across crashes and restarts
 
-**Core recipe:** Create promise with explicit ID → Communicate ID → Await promise → Process decision
+**Core recipe:** Create promise → Read generated ID → Communicate ID → Await promise → Process decision

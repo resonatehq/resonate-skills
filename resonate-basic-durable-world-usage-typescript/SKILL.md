@@ -339,38 +339,45 @@ function* workflow(ctx: Context) {
 
 **Use for:** Human-in-the-loop, webhooks, external triggers
 
-### Promise ID Auto-Generation
+### Promise IDs are always auto-generated
 
-**IMPORTANT:** In the durable world, Resonate automatically generates deterministic promise IDs based on the root promise ID (from ephemeral world invocation) UNLESS you use `ctx.detached()`.
+**IMPORTANT:** `ctx.promise()` does not take an `id`. Resonate generates a
+deterministic ID from the call tree, and that is the only supported mechanism —
+there is no way to pin a custom ID from inside a durable function.
 
-**When to use explicit IDs:**
-- Human-in-the-loop: External resolver needs to know the ID
-- Webhooks: ID must be communicated to external system
-- Detached operations: Using `ctx.detached()`
-
-**When to use auto-generated IDs:**
-- Internal promises that don't need external resolution
-- You want maximum replay safety
+The signature accepts `timeout`, `data` and `tags` and nothing else:
 
 ```ts
-// Auto-generated ID (deterministic, based on call tree)
+promise<T>(): RFI<T>;
+promise<T>({ timeout, data, tags }: {
+    timeout?: number;
+    data?: any;
+    tags?: { [key: string]: string };
+}): RFI<T>;
+```
+
+Passing `{ id }` is a TypeScript excess-property error, and if you force it
+through, the runtime destructures only `{ timeout, data, tags }` and silently
+discards it — the promise still gets the sequence-generated ID.
+
+**So how does an external resolver learn the ID?** Read it back off the promise
+and send it. That is the pattern below: create the promise first, then hand
+`promise.id` to whatever needs to resolve it.
+
+```ts
 const promise = yield* ctx.promise<T>();
 const result = yield* promise;
-
-// Explicit ID (for external resolution)
-const promise = yield* ctx.promise<T>({
-  id: `approval/${orderId}`
-});
 ```
+
+`ctx.options()` excludes `id` for the same reason —
+`options(opts?: Partial<Omit<Options, "id">>)`.
 
 ### Basic HITL Pattern
 
 ```ts
 function* approvalWorkflow(ctx: Context, orderId: string) {
-  // Create promise with explicit ID for external resolution
-  const approvalPromise = yield* ctx.promise<Decision>({
-    id: `approval/${orderId}` // External resolver needs this ID
-  });
+  // ID is auto-generated; read it back to give the external resolver
+  const approvalPromise = yield* ctx.promise<Decision>();
 
   // Send notification with promise ID
   yield* ctx.run(sendApprovalEmail, approvalPromise.id);
@@ -403,47 +410,42 @@ app.post("/approve/:promiseId", async (req, res) => {
 });
 ```
 
-**CRITICAL: Promise ID Determinism**
+**Promise ID determinism is the SDK's job, not yours**
 
-Promise IDs must be deterministic for workflow replay to work correctly:
+Replay only works if a promise gets the same ID every time the function runs.
+Because `ctx.promise()` takes no `id`, you cannot get this wrong: the ID comes
+from a per-context sequence counter that advances in call order, so the same
+code path always produces the same IDs.
 
 ```ts
-// ❌ BAD - Date.now() changes on every replay
 function* approvalLoop(ctx: Context, orderId: string) {
   while (true) {
-    const promise = yield* ctx.promise({
-      id: `approval/${orderId}/${Date.now()}` // WRONG!
-    });
+    // Each iteration gets the next sequence ID — deterministic across replays
+    const promise = yield* ctx.promise<Decision>();
+    yield* ctx.run(sendApprovalEmail, orderId, promise.id);
     const result = yield* promise;
     if (result.approved) break;
   }
-}
-
-// ✅ GOOD - Use counter/attempt number
-function* approvalLoop(ctx: Context, orderId: string) {
-  let attemptNumber = 1;
-  while (true) {
-    const promise = yield* ctx.promise({
-      id: `approval/${orderId}/attempt-${attemptNumber}` // Deterministic!
-    });
-    const result = yield* promise;
-    if (result.approved) break;
-    attemptNumber++;
-  }
-}
-
-// ✅ BETTER - Let Resonate auto-generate ID (if external resolver not needed)
-function* internalWorkflow(ctx: Context, orderId: string) {
-  // No explicit ID = Resonate generates deterministic ID from call tree
-  const promise = yield* ctx.promise<Decision>();
-  const result = yield* promise;
-  return result;
 }
 ```
 
-**Why this matters:** When a workflow replays from a checkpoint, it re-executes the same code. If you use `Date.now()` or `Math.random()` in a promise ID, the ID will be different on replay, and Resonate won't find the resolved promise, causing the workflow to create a new promise instead of resuming from the resolved one.
+**What you still have to get right:** the sequence is positional, so the *code
+path* must be deterministic even though the IDs are. Branching on `Date.now()`,
+`Math.random()`, or anything else that varies between runs can change how many
+promises get created before a given one, which shifts every subsequent ID. Use
+`ctx.date.now()` and `ctx.math.random()` — they replay the recorded value —
+and keep non-deterministic input out of control flow.
 
-**Pro tip:** Auto-generated IDs (omitting `id` field) are always deterministic and replay-safe. Only use explicit IDs when you need to communicate the ID to an external system.
+```ts
+// ❌ BAD — a wall-clock branch changes the call sequence between replays
+if (Date.now() % 2) { yield* ctx.promise<Decision>(); }
+
+// ✅ GOOD — recorded and replayed, so the branch is stable
+const now = yield* ctx.date.now();
+if (now % 2) { yield* ctx.promise<Decision>(); }
+```
+
+**Pro tip:** the generated ID is deterministic and replay-safe by construction — there is no explicit-ID alternative to weigh it against. When something outside the workflow has to resolve the promise, read `promise.id` back and publish that.
 
 **Base64 Encoding:** The Resonate server expects base64-encoded data. Encode at the API boundary (CLI/webhook), and the SDK automatically decodes it in your workflow.
 

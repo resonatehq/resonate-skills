@@ -178,8 +178,16 @@ function* processOrder(ctx: Context, orderId: string) {
     }).eq("id", ctx.id);
   });
 
-  const approval = yield* ctx.promise({ id: `approve/${ctx.id}` });
-  const ok = yield* approval as boolean;
+  // The SDK generates the promise id — create it first, then store the id so
+  // the approving client can find it.
+  const approval = yield* ctx.promise<boolean>();
+  yield* ctx.run(async () => {
+    await supabase.from("orders")
+      .update({ approval_promise_id: approval.id })
+      .eq("id", ctx.id);
+  });
+
+  const ok = yield* approval;
   if (!ok) throw new Error("rejected");
 
   return { orderId, status: "approved" };

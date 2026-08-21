@@ -336,7 +336,7 @@ This layering applies to the server, not the client subcommands. `--server` / `-
 
 ### Unblock a human-in-the-loop promise
 
-A workflow is parked on `ctx.promise({ id: "approval-456" })`. To resolve it from outside any worker:
+A workflow parks on `ctx.promise()` — the SDK generates the ID rather than taking one from the caller — and the application logs or publishes it. Say the workflow reported `approval-456`. To resolve it from outside any worker:
 
 ```shell
 resonate promises resolve approval-456 --value '{"approved": true}'

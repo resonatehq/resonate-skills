@@ -42,11 +42,11 @@ cd my-worker && bun run src/index.ts
 ```typescript
 resonate.register("countdown", function* (ctx: Context, total: number) {
   for (let i = 1; i <= total; i++) {
-    yield ctx.run(function* () {
+    yield* ctx.run(function* () {
       console.log(`Step ${i}/${total} — completed at ${new Date().toISOString()}`);
       return { step: i };
     });
-    if (i < total) yield ctx.sleep(2000);  // 2s between steps — time to kill
+    if (i < total) yield* ctx.sleep(2000);  // 2s between steps — time to kill
   }
   return { status: "done", steps: total };
 });
@@ -107,20 +107,18 @@ test("idempotent replay returns cached result", async () => {
   let executionCount = 0;
   resonate.register("idempotentTest", function* (ctx: Context) {
     executionCount++;
-    const result = yield ctx.run(function* () {
+    const result = yield* ctx.run(function* () {
       return 42;
     });
     return result;
   });
 
-  await resonate.start();
-
   // First invocation — executes the function body
-  const result1 = await resonate.invoke("idempotentTest", [], { id: "replay-test-1" });
+  const result1 = await resonate.run("replay-test-1", "idempotentTest");
   expect(executionCount).toBe(1);
 
   // Second invocation with same ID — returns cached result
-  const result2 = await resonate.invoke("idempotentTest", [], { id: "replay-test-1" });
+  const result2 = await resonate.run("replay-test-1", "idempotentTest");
   // executionCount may or may not increment (depends on SDK internals),
   // but the result should be identical
   expect(result2).toEqual(result1);
@@ -139,14 +137,14 @@ test("saga compensates on step failure", async () => {
   resonate.register("failingSaga", function* (ctx: Context) {
     const completed: string[] = [];
     try {
-      yield ctx.run(function* () { return "a"; });
+      yield* ctx.run(function* () { return "a"; });
       completed.push("step-a");
-      yield ctx.run(function* () { return "b"; });
+      yield* ctx.run(function* () { return "b"; });
       completed.push("step-b");
-      yield ctx.run(function* () { throw new Error("step-c failed"); });
+      yield* ctx.run(function* () { throw new Error("step-c failed"); });
     } catch {
       for (const step of completed.reverse()) {
-        yield ctx.run(function* () {
+        yield* ctx.run(function* () {
           compensated.push(step);
           return { compensated: step };
         });
@@ -155,8 +153,7 @@ test("saga compensates on step failure", async () => {
     }
   });
 
-  await resonate.start();
-  const result = await resonate.invoke("failingSaga", [], { id: "saga-fail-1" });
+  const result = await resonate.run("saga-fail-1", "failingSaga");
 
   expect(result).toEqual({ status: "rolled-back" });
   expect(compensated).toEqual(["step-b", "step-a"]);  // Reverse order

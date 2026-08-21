@@ -330,4 +330,4 @@ Baked-in works great for sequential, single-service workflows. You've outgrown i
 | Automatic retries with backoff | DIY retry loops | Built into the platform |
 | Observability into workflow state | Query your `workflow_steps` table | Promise state graph, execution timeline |
 
-The migration is straightforward: each `runStep()` call becomes a `yield ctx.run()`. The mental model is the same — checkpoint each step, skip on replay. Resonate just handles the hard parts (timers, suspension, distribution, retries) for you.
+The migration is straightforward: each `runStep()` call becomes a `yield* ctx.run()`. The mental model is the same — checkpoint each step, skip on replay. Resonate just handles the hard parts (timers, suspension, distribution, retries) for you.

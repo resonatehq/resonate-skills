@@ -1,6 +1,6 @@
 ---
 name: resonate-cli
-description: Drive the Resonate server from the shell — start a server (`serve` / `dev`), create/resolve/search Durable Promises, create and delete cron schedules, manually invoke a function via `invoke`, walk a call-graph with `tree`, and inspect or recover tasks (`tasks`). Reach for this when the agent needs to poke a running Resonate server without writing SDK code: unblocking a stuck human-in-the-loop promise, triggering a workflow by hand to reproduce a bug, listing pending promises by tag, registering a one-off cron, or smoke-testing a deploy. Covers global flags, every subcommand and its flags as of `resonate 0.9.7`, configuration layering (`resonate.toml` + `RESONATE_*` env vars + flags), common recipes, and the small set of docs-vs-binary deltas an agent will trip on.
+description: Drive the Resonate server from the shell — start a server (`serve` / `dev`), create/resolve/search Durable Promises, create and delete cron schedules, manually invoke a function via `invoke`, walk a call-graph with `tree`, and inspect or recover tasks (`tasks`). Reach for this when the agent needs to poke a running Resonate server without writing SDK code: unblocking a stuck human-in-the-loop promise, triggering a workflow by hand to reproduce a bug, listing pending promises by tag, registering a one-off cron, or smoke-testing a deploy. Covers global flags, every subcommand and its flags as of `resonate 0.9.8`, configuration layering (`resonate.toml` + `RESONATE_*` env vars + flags), common recipes, and the small set of docs-vs-binary deltas an agent will trip on.
 license: Apache-2.0
 ---
 
@@ -34,12 +34,12 @@ Prefer the SDK over the CLI in application code. The CLI is for operators, debug
 
 ```shell
 brew install resonatehq/tap/resonate   # macOS
-resonate --version                     # expect 0.9.7 or newer
+resonate --version                     # expect 0.9.8 or newer
 ```
 
 Linux: download from [GitHub releases](https://github.com/resonatehq/resonate/releases) and put the binary on `$PATH`.
 
-All command surface in this skill is from `resonate 0.9.7`. Use `resonate <cmd> --help` to confirm against your installed version — the built-in help is always authoritative.
+All command surface in this skill is from `resonate 0.9.8`. Use `resonate <cmd> --help` to confirm against your installed version — the built-in help is always authoritative.
 
 ## Top-level command map
 
@@ -67,7 +67,7 @@ Every client subcommand (`promises`, `tasks`, `schedules`, `invoke`, `tree`, `mc
 
 `resonate --version` and `resonate --help` work at the top level.
 
-There is **no** `--output json` flag in `resonate 0.9.7`, despite older docs mentioning one. Subcommand stdout is human-formatted; if you need structured output, call the HTTP API directly with `curl`.
+There is **no** `--output json` flag in `resonate 0.9.8`, despite older docs mentioning one. Subcommand stdout is human-formatted; if you need structured output, call the HTTP API directly with `curl`.
 
 ## Server commands
 
@@ -109,7 +109,7 @@ Same flag surface as `dev` plus storage and auth options. The full reference is 
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--storage-type <sqlite\|postgres>` | `sqlite` | **Must be set to `postgres` explicitly** — passing only `--storage-postgres-url` silently leaves the server on SQLite |
+| `--storage-type <sqlite\|postgres\|mysql>` | `sqlite` | **Must be set to `postgres` explicitly** — passing only `--storage-postgres-url` silently leaves the server on SQLite |
 | `--storage-postgres-url <URL>` | — | Required when `--storage-type postgres` |
 | `--storage-postgres-pool-size <N>` | `10` | |
 | `--storage-mysql-url <URL>` | — | MySQL is also supported |
@@ -127,7 +127,7 @@ Same flag surface as `dev` plus storage and auth options. The full reference is 
 | `--observability-otlp-endpoint <ENDPOINT>` | `localhost:4317` | OpenTelemetry OTLP target |
 | `--storage-sqlite-path <PATH>` | `resonate.db` | On-disk by default in `serve` (`:memory:` in `dev`) |
 
-**Storage gotcha:** `--storage-type` defaults to `sqlite`. If you set `--storage-postgres-url` alone, the server boots on SQLite and silently ignores the URL. Always pair them.
+**Storage gotcha:** `--storage-type` defaults to `sqlite`. If you set `--storage-postgres-url` alone, the server boots on SQLite and silently ignores the URL. Always pair them. `--storage-mysql-url` behaves differently: passing it alone **auto-switches** the storage type to `mysql` when the current type is `sqlite`, so the flag is sufficient on its own — but be explicit with `--storage-type mysql` anyway for clarity.
 
 **Health route:** `/health` returns 200 when the server is up. `/healthz` does not exist on Resonate — don't wire that into your readiness probes.
 
@@ -185,7 +185,7 @@ resonate promises search --tags '{"project":"checkout"}' --limit 50
 | `--limit <N>` | Default `100` |
 | `--cursor <CURSOR>` | Pagination cursor returned by the previous page |
 
-`promises search` does **not** take a positional ID pattern — there is no `search "order-*"` form in `resonate 0.9.7`. Filter via `--tags` or paginate `--state` results client-side.
+`promises search` does **not** take a positional ID pattern — there is no `search "order-*"` form in `resonate 0.9.8`. Filter via `--tags` or paginate `--state` results client-side.
 
 ### `promises register-callback <AWAITED> <AWAITER>`
 
@@ -218,7 +218,7 @@ resonate schedules create hourly-sync \
 | `--promise-param <JSON>` | no | Param attached to every generated promise |
 | `--promise-tags <JSON>` | no | Tags attached to every generated promise |
 
-`--description` exists in older docs but not in `resonate 0.9.7`. Use `--promise-tags` to label.
+`--description` exists in older docs but not in `resonate 0.9.8`. Use `--promise-tags` to label.
 
 ### `schedules get <ID>` / `schedules search` / `schedules delete <ID>`
 
@@ -413,9 +413,9 @@ resonate promises search --state pending
 
 ## Docs-vs-binary deltas
 
-Older copies of the hosted docs show flags that the `resonate 0.9.7` binary does not accept. When the docs disagree with `resonate <cmd> --help`, the binary wins. Known deltas at the time of writing:
+Older copies of the hosted docs show flags that the `resonate 0.9.8` binary does not accept. When the docs disagree with `resonate <cmd> --help`, the binary wins. Known deltas at the time of writing:
 
-| Docs say | `resonate 0.9.7` binary actually accepts |
+| Docs say | `resonate 0.9.8` binary actually accepts |
 |---|---|
 | `resonate promises resolve … --data '…'` | `--value '…'` (no `--data`) |
 | `resonate promises search "order-*" --limit 10` | No positional pattern; filter via `--state` and `--tags` |

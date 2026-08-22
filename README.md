@@ -6,14 +6,14 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 
 ## What's in this repo today
 
-- **11 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, the ScyllaDB and NATS provider guides, the CLI reference, the cross-SDK defaults reference, the Temporal and DBOS migration playbooks, and the `resonate-bash` MCP tool guide that apply across every Resonate SDK.
+- **12 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, the ScyllaDB, NATS, and Postgres provider guides, the CLI reference, the cross-SDK defaults reference, the Temporal and DBOS migration playbooks, and the `resonate-bash` MCP tool guide that apply across every Resonate SDK.
 - **16 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
 - **8 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) + HTTP service design for the Python SDK.
 - **8 Rust** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the early-development Rust SDK (v0.6.0, on crates.io); every Rust skill carries an explicit SDK-in-active-development note.
 - **8 Go** per-SDK skills — basic usage (ephemeral + durable) + debugging + patterns (saga, recursive fan-out, durable-sleep, human-in-the-loop, external system of record) for the Go SDK, tagged `0.1.0` (install `go get github.com/resonatehq/resonate-sdk-go@0.1.0` — see the Go section below for why `@latest` doesn't resolve to it); every Go skill carries a version caveat and documents the direct `Promises()` / `Schedules()` sub-clients the `0.1.0` tag shipped.
 - **8 Java** per-SDK skills — basic usage (ephemeral + durable) + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the Java SDK. Unlike Go, the Java SDK is **published on Maven Central** (`io.resonatehq:resonate-sdk-java:0.1.1`) and ships the fuller surface — `r.promises` and `r.schedules` sub-clients plus a top-level `r.schedule(...)` cron API — so the Java skills use those directly rather than documenting a gap. Requires Java 21+ (virtual threads); every Java skill carries a light prerelease note (API may change before `1.0`) and is compile-verified against `0.1.1`.
 
-That is **11 foundational + 48 per-SDK = 59 skills** (16 TypeScript, 8 Python, 8 Rust, 8 Go, 8 Java).
+That is **12 foundational + 48 per-SDK = 60 skills** (16 TypeScript, 8 Python, 8 Rust, 8 Go, 8 Java).
 
 ## What is a skill?
 

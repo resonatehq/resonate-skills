@@ -33,7 +33,7 @@ Related: [`resonate-supabase-deployments-typescript`](../resonate-supabase-deplo
 - **The user is deploying worker code.** That is the Supabase deployments skill, not this one.
 - **The user needs a mature, well-tested implementation.** Be honest — see Gaps. This is the youngest of the three providers.
 
-## Licensing — the exception among providers
+## Licensing — say this correctly
 
 `resonate-pg` is **Apache 2.0**, like the core server. Unlike `resonate-on-nats` and `resonate-on-scylladb`, there is no BUSL-1.1 restriction and no production-use license to buy. Do not carry the BUSL caveat over from the other two provider skills by pattern-matching.
 
@@ -58,12 +58,13 @@ If `pg_cron` is unavailable, **the install still succeeds.** It raises a `WARNIN
 
 Verify both, always:
 
+**1. Did the timer actually get scheduled?**
+
 ```sql
--- 1. Did the timer actually get scheduled?
 SELECT jobname, schedule, active FROM cron.job WHERE jobname = 'resonate_process_timeouts';
 ```
 
-Look for the `resonate: pg_cron enabled` notice in the install output too.
+**2. Did the install say so?** Look for the `resonate: pg_cron enabled` notice in the install output.
 
 Scheduling also **degrades quietly**. The installer tries, in order: `cron.schedule_in_database` at `5 seconds`, then plain `cron.schedule` at `5 seconds`, then `cron.schedule` at `* * * * *`. That last fallback works, but timer resolution drops from five seconds to one minute. If a user reports sleeps that wake "about a minute late," check which branch they landed on rather than looking for a bug in the workflow.
 

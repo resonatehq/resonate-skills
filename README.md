@@ -6,14 +6,14 @@ Each skill teaches a coding agent (Claude Code, Cursor, or any skill-aware agent
 
 ## What's in this repo today
 
-- **11 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, the ScyllaDB and NATS provider guides, the CLI reference, the cross-SDK defaults reference, the Temporal and DBOS migration playbooks, and the `resonate-bash` MCP tool guide that apply across every Resonate SDK.
+- **12 foundational** (language-agnostic) skills — concepts, mental models, the server-install guides, the ScyllaDB, NATS, and Postgres provider guides, the CLI reference, the cross-SDK defaults reference, the Temporal and DBOS migration playbooks, and the `resonate-bash` MCP tool guide that apply across every Resonate SDK.
 - **16 TypeScript** per-SDK skills — idiomatic usage of the TypeScript SDK.
 - **8 Python** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, human-in-the-loop, external system of record) + HTTP service design for the Python SDK.
 - **8 Rust** per-SDK skills — basic usage + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the early-development Rust SDK (v0.6.0, on crates.io); every Rust skill carries an explicit SDK-in-active-development note.
 - **8 Go** per-SDK skills — basic usage (ephemeral + durable) + debugging + patterns (saga, recursive fan-out, durable-sleep, human-in-the-loop, external system of record) for the Go SDK, tagged `0.1.0` (install `go get github.com/resonatehq/resonate-sdk-go@0.1.0` — see the Go section below for why `@latest` doesn't resolve to it); every Go skill carries a version caveat and documents the direct `Promises()` / `Schedules()` sub-clients the `0.1.0` tag shipped.
 - **8 Java** per-SDK skills — basic usage (ephemeral + durable) + debugging + patterns (saga, recursive fan-out, durable-sleep-scheduled-work, human-in-the-loop, external system of record) for the Java SDK. Unlike Go, the Java SDK is **published on Maven Central** (`io.resonatehq:resonate-sdk-java:0.1.1`) and ships the fuller surface — `r.promises` and `r.schedules` sub-clients plus a top-level `r.schedule(...)` cron API — so the Java skills use those directly rather than documenting a gap. Requires Java 21+ (virtual threads); every Java skill carries a light prerelease note (API may change before `1.0`) and is compile-verified against `0.1.1`.
 
-That is **11 foundational + 48 per-SDK = 59 skills** (16 TypeScript, 8 Python, 8 Rust, 8 Go, 8 Java).
+That is **12 foundational + 48 per-SDK = 60 skills** (16 TypeScript, 8 Python, 8 Rust, 8 Go, 8 Java).
 
 ## What is a skill?
 
@@ -51,6 +51,7 @@ Every skill falls into one of two categories.
 - [`resonate-server-deployment-cloud-run`](resonate-server-deployment-cloud-run/SKILL.md) — Deploy the Resonate server to Google Cloud Run with Cloud SQL Postgres storage.
 - [`resonate-server-scylladb`](resonate-server-scylladb/SKILL.md) — Run the protocol on ScyllaDB via `resonate-on-scylladb`, a separate Go server rather than a backend of the core server. Its own `SCYLLADB_`/`SERVER_` env model (not `RESONATE_`), the six-table schema, the BUSL-1.1 constraint, and the current gaps. Drop-in: existing SDKs work unchanged.
 - [`resonate-server-nats`](resonate-server-nats/SKILL.md) — Run the protocol on NATS JetStream via `resonate-on-nats`, where NATS is both storage and transport and there is no HTTP interface at all. Partitioning across instances, wiring workers with the `NatsNetwork` client (TypeScript and Python only), the subject layout, the lowercase `group`/`pid` trap, and the current gaps.
+- [`resonate-server-postgres`](resonate-server-postgres/SKILL.md) — Run the protocol *inside* Postgres via `resonate-pg`: one SQL file of stored procedures, no server process at all. Not the same thing as the core server on Postgres. The `pg_cron` timer dependency and its silent-failure mode, `resonate_rpc`, `invoke`'s 24-hour default timeout, the `resonate_worker` grant surface, GC and id idempotency, the Deno-only client, and the current gaps. Apache 2.0, unlike the other two providers.
 - [`resonate-bash`](resonate-bash/SKILL.md) — Run shell scripts as durable, asynchronous tasks via the `resonate-bash` MCP tool. What it's good at, how to install the local Resonate server + Claude Code MCP wiring, tool reference (params, target addresses, env vars, failure semantics).
 
 **Reference:**
